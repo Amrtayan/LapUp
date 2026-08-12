@@ -1,7 +1,7 @@
 // LapUp Service Worker
 // Cache-first strategy for app shell; stale-while-revalidate for Google Fonts.
 
-const CACHE_NAME = 'laptrack-v1';
+const CACHE_NAME = 'lapup-v2';
 
 const APP_SHELL = [
   './index.html',
