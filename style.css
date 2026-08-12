@@ -881,4 +881,8 @@ html, body {
     margin-left: 0;
     transform: translateX(-280px);
   }
+
+  /* Icon-only Lap Cycle button on mobile */
+  .btn-median-text { display: none; }
+  .btn-median { padding: 8px; gap: 0; }
 }
