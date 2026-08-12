@@ -1,6 +1,6 @@
 {
-  "name": "LapTrack - Lap Deficit Tracker",
-  "short_name": "LapTrack",
+  "name": "LapUp - Lap Deficit Tracker",
+  "short_name": "LapUp",
   "description": "A precision stopwatch with Lap Cycle tracking, per-lap deficit ledger, and study session history.",
   "start_url": "./index.html",
   "display": "standalone",

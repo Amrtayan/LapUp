@@ -859,10 +859,10 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
       .then(reg => {
-        console.log('[LapTrack] Service Worker registered. Scope:', reg.scope);
+        console.log('[LapUp] Service Worker registered. Scope:', reg.scope);
       })
       .catch(err => {
-        console.warn('[LapTrack] Service Worker registration failed:', err);
+        console.warn('[LapUp] Service Worker registration failed:', err);
       });
   });
 }
