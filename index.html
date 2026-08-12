@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="A precision stopwatch with Lap Cycle tracking, per-lap deficit ledger, and study session history." />
+  <title>LapTrack — Lap Deficit Tracker</title>
+
+  <!-- PWA: Manifest & Theme -->
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#4a90d9" />
+
+  <!-- PWA: Apple / iOS meta tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="LapTrack" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="app-wrapper">
+    <header class="app-header">
+      <div class="header-left">
+        <button id="btn-toggle-sidebar" class="btn-toggle-sidebar" title="Toggle Sessions" aria-label="Toggle Sessions Sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <div class="header-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span>LapTrack</span>
+        </div>
+      </div>
+      <button id="btn-set-median" class="btn-median" title="Set Lap Cycle">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+        Set Lap Cycle
+      </button>
+    </header>
+
+    <main class="main-content">
+
+      <!-- ── SIDEBAR: Study Sessions ── -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <button id="btn-create-session" class="btn btn-primary btn-create-session" title="Create a new study session">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Create Session
+          </button>
+        </div>
+        <div class="sessions-list" id="sessions-list">
+          <!-- Session items injected dynamically by JS -->
+        </div>
+      </aside>
+
+      <!-- ── LEFT PANEL: Clock ── -->
+      <section class="clock-panel" aria-label="Stopwatch">
+
+        <div class="dial-wrapper">
+          <!-- SVG Dial -->
+          <svg class="dial-svg" id="dial-svg" viewBox="0 0 320 320" aria-hidden="true">
+            <!-- Outer decoration ring -->
+            <circle cx="160" cy="160" r="148" class="dial-deco-ring"/>
+            <!-- Tick marks -->
+            <g id="dial-ticks"></g>
+            <!-- Track ring -->
+            <circle cx="160" cy="160" r="132" class="dial-track"/>
+            <!-- Progress arc -->
+            <circle cx="160" cy="160" r="132" class="dial-progress" id="dial-progress"/>
+            <!-- Inner glow ring -->
+            <circle cx="160" cy="160" r="118" class="dial-inner-ring"/>
+          </svg>
+
+          <!-- Clock display overlaid on dial -->
+          <div class="clock-overlay">
+            <div class="lap-segment-label" id="lap-segment-label">LAP 1</div>
+            <div class="clock-display" id="clock-display">
+              <span class="clock-digits" id="clock-digits">00:00:00</span>
+              <span class="clock-cs" id="clock-cs">.00</span>
+            </div>
+            <div class="median-display" id="median-display">
+              <span class="median-icon">◎</span>
+              <span id="median-value-display">No median set</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls" id="controls">
+          <button id="btn-reset" class="btn btn-secondary" disabled>Clear Lap</button>
+          <button id="btn-start" class="btn btn-primary">Start</button>
+          <button id="btn-lap" class="btn btn-accent" disabled>Lap</button>
+        </div>
+
+      </section>
+
+      <!-- ── RIGHT PANEL: Ledger ── -->
+      <section class="ledger-panel" aria-label="Lap Deficit Ledger">
+        <div class="ledger-header">
+          <h2>Lap Deficit Ledger</h2>
+          <span class="ledger-badge" id="ledger-lap-count">0 laps</span>
+        </div>
+
+        <div class="ledger-table-wrapper">
+          <table class="ledger-table" id="ledger-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Lap Time</th>
+                <th>Deficit</th>
+              </tr>
+            </thead>
+            <tbody id="ledger-body">
+              <!-- Rows injected by JS -->
+            </tbody>
+          </table>
+
+          <!-- Empty state -->
+          <div class="ledger-empty" id="ledger-empty">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" stroke-width="1.5" opacity="0.4">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <p>No laps recorded yet</p>
+            <p class="ledger-empty-sub">Start the stopwatch and press Lap</p>
+          </div>
+        </div>
+
+        <!-- Net Deficit Footer -->
+        <div class="ledger-footer" id="ledger-footer">
+          <div class="net-deficit-row">
+            <span class="net-label">Net Deficit</span>
+            <span class="net-value" id="net-deficit-value">—</span>
+          </div>
+          <div class="net-subtext" id="net-subtext">Record your first lap to begin tracking</div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── LAP CYCLE MODAL ── -->
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <h3 id="modal-title">Set Lap Cycle</h3>
+      <p class="modal-desc">Build a repeating cycle of target lap durations. Deficits will align with these targets sequentially (e.g. Lap 1 uses Median 1, Lap 2 uses Median 2, etc.).</p>
+      
+      <!-- Current Cycle List -->
+      <div class="modal-cycle-list-container">
+        <label class="modal-section-label">Active Cycle Sequence</label>
+        <div class="modal-cycle-list" id="modal-cycle-list">
+          <!-- Dynamically populated by JS -->
+          <div class="modal-cycle-empty">No medians added to cycle yet</div>
+        </div>
+      </div>
+
+      <!-- Input Group to Add a Median -->
+      <label class="modal-section-label">Add Next Target Duration</label>
+      <div class="time-inputs">
+        <div class="time-input-group">
+          <input type="number" id="input-hh" min="0" max="99" value="0" placeholder="00" aria-label="Hours"/>
+          <label for="input-hh">HH</label>
+        </div>
+        <span class="time-sep">:</span>
+        <div class="time-input-group">
+          <input type="number" id="input-mm" min="0" max="59" value="0" placeholder="00" aria-label="Minutes"/>
+          <label for="input-mm">MM</label>
+        </div>
+        <span class="time-sep">:</span>
+        <div class="time-input-group">
+          <input type="number" id="input-ss" min="0" max="59" value="0" placeholder="00" aria-label="Seconds"/>
+          <label for="input-ss">SS</label>
+        </div>
+      </div>
+
+      <button id="btn-modal-add-median" class="btn btn-secondary btn-add-median" type="button" title="Add this duration to your sequence">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Add Median
+      </button>
+
+      <div class="modal-actions">
+        <button id="btn-modal-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="btn-modal-set" class="btn btn-primary">Set Cycle</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
