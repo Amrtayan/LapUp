@@ -1,19 +1,20 @@
 // LapUp Service Worker
 // Network-first for app shell (auto-updates); stale-while-revalidate for Google Fonts.
 
-const CACHE_NAME = 'lapup-v2';
+const CACHE_NAME = 'lapup-v3';
 
 const APP_SHELL = [
   './index.html',
   './style.css',
   './script.js',
+  './firebase-config.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
 
 const FONT_CACHE_NAME = 'lapup-fonts-v1';
-const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
+const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com'];
 
 // ── Install: pre-cache the app shell for offline use ─────────
 self.addEventListener('install', event => {

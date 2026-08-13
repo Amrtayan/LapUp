@@ -1,3 +1,14 @@
+// ── Firebase imports ─────────────────────────────────────────
+import {
+  getCurrentUser,
+  signInWithGoogle,
+  signOutUser,
+  onAuthChange,
+  saveSessionsToCloud,
+  loadSessionsFromCloud,
+  mergeSessions
+} from './firebase-config.js';
+
 // ── State ────────────────────────────────────────────────────
 let elapsedMs   = 0;          // total ms on the clock
 let lapStartMs  = 0;          // ms at which the current lap began
@@ -43,6 +54,15 @@ const sidebar            = document.getElementById('sidebar');
 const sessionsList       = document.getElementById('sessions-list');
 const btnToggleSidebar   = document.getElementById('btn-toggle-sidebar');
 const btnCreateSession   = document.getElementById('btn-create-session');
+
+// Auth DOM refs
+const btnAuth            = document.getElementById('btn-auth');
+const btnAvatar          = document.getElementById('btn-avatar');
+const avatarImg          = document.getElementById('avatar-img');
+const authDropdown       = document.getElementById('auth-dropdown');
+const authDropdownUser   = document.getElementById('auth-dropdown-user');
+const authDropdownSync   = document.getElementById('auth-dropdown-sync');
+const btnSignOut         = document.getElementById('btn-sign-out');
 
 // Modal list and add button DOM refs
 const btnModalAddMedian  = document.getElementById('btn-modal-add-median');
@@ -628,6 +648,46 @@ function loadSessions() {
   }
 }
 
+// Merge in cloud sessions after sign-in
+async function syncFromCloud() {
+  setSyncStatus('syncing');
+  const result = await loadSessionsFromCloud();
+  if (!result) {
+    setSyncStatus('error');
+    return;
+  }
+
+  const merged = mergeSessions(sessions, result.sessions);
+
+  // Determine the best active session ID post-merge
+  let newActiveId = result.activeSessionId || activeSessionId;
+  if (!merged.some(s => s.id === newActiveId)) {
+    newActiveId = merged.sort((a, b) => b.lastUpdated - a.lastUpdated)[0]?.id || null;
+  }
+
+  sessions = merged;
+  activeSessionId = newActiveId;
+
+  // Persist merged state locally
+  localStorage.setItem('laptrack_sessions', JSON.stringify(sessions));
+  if (activeSessionId) localStorage.setItem('laptrack_active_session_id', activeSessionId);
+
+  loadActiveSession();
+  setSyncStatus('synced');
+}
+
+// ── Cloud sync debounce ────────────────────────────────────────
+let _cloudSyncTimer = null;
+function scheduleSyncToCloud() {
+  if (!getCurrentUser()) return;
+  clearTimeout(_cloudSyncTimer);
+  _cloudSyncTimer = setTimeout(async () => {
+    setSyncStatus('syncing');
+    const ok = await saveSessionsToCloud(sessions, activeSessionId);
+    setSyncStatus(ok ? 'synced' : 'error');
+  }, 2000); // debounce: wait 2 s of inactivity before writing
+}
+
 // Save sessions to localStorage
 function saveSessions() {
   try {
@@ -638,6 +698,7 @@ function saveSessions() {
   } catch (e) {
     console.error('Error saving sessions to localStorage:', e);
   }
+  scheduleSyncToCloud();
 }
 
 // Save current stopwatch live variables into active session
@@ -850,6 +911,63 @@ function renderSessionsList() {
 // Expose functions globally for dynamic elements
 window.selectSession = selectSession;
 window.deleteSession = deleteSession;
+
+// ── Auth UI helpers ───────────────────────────────────────────
+function setSyncStatus(status) {
+  // status: 'syncing' | 'synced' | 'error'
+  const labels = { syncing: 'Syncing…', synced: 'Synced to cloud', error: 'Sync failed' };
+  authDropdownSync.innerHTML = `<span class="sync-dot ${status}"></span>${labels[status] || ''}`;
+}
+
+function updateAuthUI(user) {
+  if (user) {
+    // Signed in
+    btnAuth.classList.add('hidden');
+    btnAvatar.classList.remove('hidden');
+    avatarImg.src = user.photoURL || '';
+    avatarImg.alt = user.displayName || 'Account';
+    authDropdownUser.textContent = user.displayName || user.email || 'Signed in';
+    authDropdownSync.innerHTML = '<span class="sync-dot synced"></span>Synced to cloud';
+  } else {
+    // Signed out
+    btnAuth.classList.remove('hidden');
+    btnAvatar.classList.add('hidden');
+    authDropdown.classList.add('hidden');
+  }
+}
+
+// Auth button: sign in
+btnAuth.addEventListener('click', () => signInWithGoogle());
+
+// Avatar button: toggle dropdown
+btnAvatar.addEventListener('click', (e) => {
+  e.stopPropagation();
+  authDropdown.classList.toggle('hidden');
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!authDropdown.classList.contains('hidden') &&
+      !authDropdown.contains(e.target) &&
+      e.target !== btnAvatar) {
+    authDropdown.classList.add('hidden');
+  }
+});
+
+// Sign out
+btnSignOut.addEventListener('click', async () => {
+  authDropdown.classList.add('hidden');
+  await signOutUser();
+});
+
+// Auth state listener — fires on page load and whenever the user signs in/out
+onAuthChange(async (user) => {
+  updateAuthUI(user);
+  if (user) {
+    // Signed in: merge cloud data into local
+    await syncFromCloud();
+  }
+});
 
 // ── Init ──────────────────────────────────────────────────────
 loadSessions();
