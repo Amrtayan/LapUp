@@ -16,11 +16,18 @@ let lapMedianMs = 0;          // user-set median in ms (0 = not set)
 let isRunning   = false;
 let rafId       = null;       // requestAnimationFrame handle
 let lastTimestamp = null;     // last rAF timestamp
-let laps        = [];         // { type: 'lap'/'cycle_change', ... }
+let laps        = [];         // { type: 'lap'/'cycle_change'/'gap', ... }
 let lapCounter  = 1;          // next lap number
 let lastSavedElapsedMs = 0;   // last elapsedMs at which we autosaved
 let clearStopwatchWithLap = true; // permanently true
 let tempMedians = [];         // temporary medians list for Set Lap Cycle modal
+
+// ── Gap Timer State ──────────────────────────────────────────
+let gapElapsedMs      = 0;    // ms in the currently-running / accumulated gap
+let gapLastTimestamp  = null; // rAF timestamp for gap tick
+let isGapRunning      = false;// gap timer is actively ticking
+let gapRafId          = null; // rAF handle for gap tick loop
+let currentGapLapNum  = 0;    // display lap# (in-cycle) at time of current pause
 
 let sessions      = [];       // study sessions list
 let activeSessionId = null;   // active session ID
@@ -67,6 +74,20 @@ const btnSignOut         = document.getElementById('btn-sign-out');
 // Modal list and add button DOM refs
 const btnModalAddMedian  = document.getElementById('btn-modal-add-median');
 const modalCycleList     = document.getElementById('modal-cycle-list');
+
+// Remarks DOM refs
+const btnRemarks         = document.getElementById('btn-remarks');
+const remarksModalOverlay = document.getElementById('remarks-modal-overlay');
+const remarksTextarea    = document.getElementById('remarks-textarea');
+const remarksSaveIndicator = document.getElementById('remarks-save-indicator');
+const btnRemarksClose    = document.getElementById('btn-remarks-close');
+
+// Gap Timer DOM refs
+const gapTimerContainer  = document.getElementById('gap-timer-container');
+const gapDigits          = document.getElementById('gap-digits');
+const gapCs              = document.getElementById('gap-cs');
+const gapTotalRow        = document.getElementById('gap-total-row');
+const gapTotalValue      = document.getElementById('gap-total-value');
 
 // Dial constants
 const DIAL_RADIUS      = 132;
@@ -214,6 +235,84 @@ function updateDial() {
   }
 }
 
+// ── Gap Timer Helpers ───────────────────────────────────────
+// Returns the current in-cycle lap number (= the lap that is IN PROGRESS)
+function getCurrentInCycleLapNum() {
+  let count = 0;
+  for (let i = laps.length - 1; i >= 0; i--) {
+    if (laps[i].type === 'cycle_change') break;
+    if (laps[i].type === 'lap') count++;
+  }
+  return count + 1; // the next lap to be recorded
+}
+
+function showGapUI() {
+  gapTimerContainer.classList.add('active');
+}
+
+function hideGapUI() {
+  gapTimerContainer.classList.remove('active');
+  gapDigits.textContent = '00:00:00';
+  gapCs.textContent = '.00';
+}
+
+function renderGapClock() {
+  const { main, cs } = msToHHMMSScs(gapElapsedMs);
+  gapDigits.textContent = main;
+  gapCs.textContent = cs;
+}
+
+function gapTick(timestamp) {
+  if (!isGapRunning) return;
+  if (gapLastTimestamp !== null) {
+    gapElapsedMs += timestamp - gapLastTimestamp;
+  }
+  gapLastTimestamp = timestamp;
+  renderGapClock();
+  gapRafId = requestAnimationFrame(gapTick);
+}
+
+// Start gap RAF (optionally set which lap this gap belongs to)
+function startGapTimer(lapNum) {
+  if (isGapRunning) return;
+  if (lapNum !== undefined) {
+    currentGapLapNum = lapNum;
+    gapElapsedMs = 0; // fresh gap
+  }
+  isGapRunning = true;
+  gapLastTimestamp = null;
+  gapRafId = requestAnimationFrame(gapTick);
+  showGapUI();
+}
+
+// Pause gap RAF without logging (preserves accumulated time)
+function pauseGapTimer() {
+  if (!isGapRunning) return;
+  cancelAnimationFrame(gapRafId);
+  gapRafId = null;
+  isGapRunning = false;
+  gapLastTimestamp = null;
+  // gapElapsedMs is kept; gap UI stays visible (frozen display)
+}
+
+// Log accumulated gap as an event, then reset gap state
+// cleared = true means the gap was ended by a Clear Lap action
+function finalizeGap(cleared = false) {
+  const MIN_GAP_MS = 500; // don't log sub-500ms gaps
+  if (gapElapsedMs >= MIN_GAP_MS) {
+    laps.push({ type: 'gap', lapNum: currentGapLapNum, durationMs: gapElapsedMs, cleared });
+  }
+  // Stop RAF if still running
+  if (isGapRunning) {
+    cancelAnimationFrame(gapRafId);
+    gapRafId = null;
+    isGapRunning = false;
+  }
+  gapElapsedMs = 0;
+  gapLastTimestamp = null;
+  currentGapLapNum = 0;
+}
+
 function setClockColor(color) {
   const c = color || 'var(--text)';
   clockDigits.style.color = c;
@@ -243,15 +342,21 @@ function tick(timestamp) {
 // ── Controls ──────────────────────────────────────────────────
 function startStop() {
   if (isRunning) {
-    // PAUSE
+    // Active -> Paused: stop dial, start gap timer
     isRunning = false;
     cancelAnimationFrame(rafId);
     lastTimestamp = null;
     btnStart.textContent = 'Resume';
     btnLap.disabled      = true;
+    startGapTimer(getCurrentInCycleLapNum());
     saveActiveSessionState();
   } else {
-    // START / RESUME
+    // Paused or Hard-Paused -> Active: finalize any gap, start dial
+    if (isGapRunning || gapElapsedMs > 0) {
+      finalizeGap(false);
+      hideGapUI();
+      renderLedger();
+    }
     isRunning = true;
     btnStart.textContent = 'Pause';
     btnLap.disabled      = false;
@@ -259,7 +364,7 @@ function startStop() {
     rafId = requestAnimationFrame(tick);
     saveActiveSessionState();
   }
-  renderSessionsList(); // update sidebar indicators immediately (running/paused)
+  renderSessionsList();
 }
 
 function recordLap() {
@@ -312,7 +417,15 @@ function recordLap() {
 }
 
 function clearLap() {
-  // Only clear the current in-progress lap — keep all session history intact
+  // Capture paused state BEFORE we change anything
+  const wasInPausedState = !isRunning && (isGapRunning || gapElapsedMs > 0);
+
+  // Finalize any in-progress gap (mark as cleared)
+  if (isGapRunning || gapElapsedMs > 0) {
+    finalizeGap(true); // cleared = true
+  }
+
+  // Reset main elapsed
   elapsedMs        = 0;
   lapStartMs       = 0;
   lastSavedElapsedMs = 0;
@@ -332,6 +445,13 @@ function clearLap() {
   dialProgress.style.filter = 'drop-shadow(0 0 6px rgba(74,144,217,0.6))';
   setClockColor(null);
   updateMedianDisplay();
+
+  // If we were in a paused state, automatically start a new gap timer for this lap
+  if (wasInPausedState) {
+    startGapTimer(getCurrentInCycleLapNum());
+  }
+
+  renderLedger();
   saveActiveSessionState();
 }
 
@@ -358,6 +478,13 @@ function getLedgerItems() {
         type: 'separator',
         medians: activeMedians,
         timestamp: item.timestamp || i
+      });
+    } else if (item && item.type === 'gap') {
+      items.push({
+        type: 'gap',
+        lapNum: item.lapNum,
+        durationMs: item.durationMs,
+        cleared: item.cleared || false
       });
     } else if (item) {
       currentCycleLaps++;
@@ -410,6 +537,22 @@ function renderLedger() {
         </tr>`;
     }
 
+    if (item.type === 'gap') {
+      const { main, cs } = msToHHMMSScs(item.durationMs);
+      const clearedBadge = item.cleared ? '<span class="gap-cleared-badge">cleared</span>' : '';
+      return `
+        <tr class="ledger-gap-row">
+          <td colspan="3">
+            <div class="gap-content">
+              <span class="gap-lap-ref">#${item.lapNum}</span>
+              <span class="gap-arrow">→</span>
+              <span class="gap-time">${main}${cs}</span>
+              ${clearedBadge}
+            </div>
+          </td>
+        </tr>`;
+    }
+
     const lapStr    = msToHHMMSS(item.lapTimeMs);
     const hasTarget = item.targetMs > 0;
     const defStr    = hasTarget ? formatDeficit(item.deficitMs) : '—';
@@ -456,6 +599,17 @@ function renderLedger() {
   netDeficitValue.textContent = netStr;
   netDeficitValue.className   = `net-value ${netClass}`;
   netSubtext.textContent      = subtext;
+
+  // ── Total Gap Time footer row ───────────────────────────────
+  const gapItems = laps.filter(l => l.type === 'gap');
+  if (gapItems.length > 0) {
+    const totalGapMs = gapItems.reduce((acc, g) => acc + g.durationMs, 0);
+    const { main: gMain, cs: gCs } = msToHHMMSScs(totalGapMs);
+    gapTotalValue.textContent = `${gMain}${gCs}`;
+    gapTotalRow.classList.remove('hidden');
+  } else {
+    gapTotalRow.classList.add('hidden');
+  }
 }
 
 // ── Median Modal ──────────────────────────────────────────────
@@ -579,12 +733,15 @@ btnModalAddMedian.addEventListener('click', addTempMedian);
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.code === 'Space') { e.preventDefault(); startStop(); }
   if (e.code === 'KeyL')  { if (!btnLap.disabled) recordLap(); }
   if (e.code === 'KeyR')  { if (!btnReset.disabled) clearLap(); }
   if (e.code === 'KeyM')  openModal();
-  if (e.code === 'Escape') closeModal();
+  if (e.code === 'Escape') {
+    closeModal();
+    closeRemarks();
+  }
 });
 
 // Clamp numeric inputs on blur
@@ -711,6 +868,9 @@ function saveActiveSessionState() {
     session.lapMedianMs = lapMedianMs;
     session.lapCounter = lapCounter;
     session.laps = [...laps];
+    session.remarks = remarksTextarea.value;
+    session.gapElapsedMs = gapElapsedMs;
+    session.currentGapLapNum = currentGapLapNum;
     session.lastUpdated = Date.now();
     saveSessions();
     renderSessionsList();
@@ -738,8 +898,14 @@ function loadActiveSession() {
     laps = [...session.laps];
     lastSavedElapsedMs = elapsedMs;
 
+    // Restore gap state
+    gapElapsedMs = session.gapElapsedMs || 0;
+    currentGapLapNum = session.currentGapLapNum || 0;
+    isGapRunning = false; // don't auto-start RAF on load
+    gapLastTimestamp = null;
+
     // Update buttons state
-    if (elapsedMs > 0) {
+    if (elapsedMs > 0 || gapElapsedMs > 0) {
       btnReset.disabled = false;
       btnStart.textContent = 'Resume';
     } else {
@@ -757,6 +923,17 @@ function loadActiveSession() {
     // Set segment label
     lapSegmentLabel.textContent = `LAP ${lapCounter}`;
     setClockColor(null);
+
+    // Restore gap UI state (show frozen gap if there was one, without auto-starting)
+    if (gapElapsedMs > 0) {
+      renderGapClock();
+      showGapUI();
+    } else {
+      hideGapUI();
+    }
+
+    // Load remarks for this session
+    remarksTextarea.value = session.remarks || '';
 
     renderSessionsList();
   }
@@ -789,6 +966,7 @@ function createNewSession(switchToIt = true) {
     lapMedianMs: lapMedianMs, // carry over legacy field
     lapCounter: 1,
     laps: initialLaps,
+    remarks: '',
     createdTime: Date.now(),
     lastUpdated: Date.now()
   };
@@ -805,10 +983,17 @@ function createNewSession(switchToIt = true) {
 // Select a session
 function selectSession(id) {
   if (id === activeSessionId) return;
+
+  // Finalize any in-progress gap before switching sessions
+  if (isGapRunning || gapElapsedMs > 0) {
+    finalizeGap(false);
+    hideGapUI();
+  }
+
   saveActiveSessionState();
   activeSessionId = id;
   loadActiveSession();
-  
+
   // Auto-close sidebar on mobile after selecting a session
   if (window.innerWidth <= 800) {
     sidebar.classList.remove('active');
@@ -864,6 +1049,19 @@ function renderSessionsList() {
   sessionsList.innerHTML = sortedSessions.map(s => {
     const isActive = s.id === activeSessionId;
     const isRunningSession = isActive && isRunning;
+    const isGapSession     = isActive && isGapRunning;
+
+    // Sidebar play/pause button (active session only)
+    const showPlayPause = isActive && (isRunning || isGapRunning || gapElapsedMs > 0);
+    const ppTitle  = isRunning ? 'Hard-pause session' : isGapRunning ? 'Pause gap timer' : 'Resume gap timer';
+    const ppIcon   = (!isRunning && !isGapRunning && gapElapsedMs > 0)
+      // Play icon
+      ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
+      // Pause icon
+      : `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+    const ppBtn = showPlayPause
+      ? `<button class="btn-session-playpause" onclick="toggleSessionGapTimer(event)" title="${ppTitle}" aria-label="${ppTitle}">${ppIcon}</button>`
+      : '';
     
     const lapItems  = s.laps.filter(l => !l.type || l.type === 'lap');
     const lapsCount = lapItems.length;
@@ -895,6 +1093,7 @@ function renderSessionsList() {
             ${runningIndicator}
           </div>
         </div>
+        ${ppBtn}
         <button class="btn-delete-session" onclick="deleteSession('${s.id}', event)" title="Delete session" aria-label="Delete Session">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"/>
@@ -911,6 +1110,82 @@ function renderSessionsList() {
 // Expose functions globally for dynamic elements
 window.selectSession = selectSession;
 window.deleteSession = deleteSession;
+
+// ── Sidebar session gap-timer toggle ───────────────────────────
+function toggleSessionGapTimer(event) {
+  event.stopPropagation(); // don't trigger selectSession
+
+  if (isRunning) {
+    // Active → Hard-Paused: stop dial, NO gap timer
+    isRunning = false;
+    cancelAnimationFrame(rafId);
+    lastTimestamp = null;
+    btnStart.textContent = 'Resume';
+    btnLap.disabled = true;
+    saveActiveSessionState();
+
+  } else if (isGapRunning) {
+    // Paused → Hard-Paused: freeze gap timer (keep accumulated)
+    pauseGapTimer();
+    // gap UI stays visible showing frozen time
+    saveActiveSessionState();
+
+  } else if (gapElapsedMs > 0) {
+    // Hard-Paused → Paused: resume gap timer from accumulated time
+    isGapRunning = true;
+    gapLastTimestamp = null;
+    gapRafId = requestAnimationFrame(gapTick);
+    // gap UI is already visible
+    saveActiveSessionState();
+  }
+
+  renderSessionsList();
+}
+window.toggleSessionGapTimer = toggleSessionGapTimer;
+
+// ── Remarks Modal ────────────────────────────────────────────
+function openRemarks() {
+  remarksModalOverlay.classList.add('active');
+  remarksTextarea.focus();
+}
+
+function closeRemarks() {
+  remarksModalOverlay.classList.remove('active');
+  // Ensure final value is saved
+  saveRemarksNow();
+}
+
+function saveRemarksNow() {
+  if (!activeSessionId) return;
+  const session = sessions.find(s => s.id === activeSessionId);
+  if (session) {
+    session.remarks = remarksTextarea.value;
+    session.lastUpdated = Date.now();
+    saveSessions();
+  }
+}
+
+let _remarksSaveTimer = null;
+function onRemarksInput() {
+  // Show 'Saving…' indicator
+  remarksSaveIndicator.textContent = 'Saving…';
+  remarksSaveIndicator.classList.add('visible');
+
+  clearTimeout(_remarksSaveTimer);
+  _remarksSaveTimer = setTimeout(() => {
+    saveRemarksNow();
+    remarksSaveIndicator.textContent = 'Saved';
+    // Fade out after 1.5s
+    setTimeout(() => remarksSaveIndicator.classList.remove('visible'), 1500);
+  }, 600);
+}
+
+btnRemarks.addEventListener('click', openRemarks);
+btnRemarksClose.addEventListener('click', closeRemarks);
+remarksModalOverlay.addEventListener('click', (e) => {
+  if (e.target === remarksModalOverlay) closeRemarks();
+});
+remarksTextarea.addEventListener('input', onRemarksInput);
 
 // ── Auth UI helpers ───────────────────────────────────────────
 function setSyncStatus(status) {

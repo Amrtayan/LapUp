@@ -421,6 +421,45 @@ html, body {
   }
 }
 
+/* ── Session sidebar play/pause button ────────────────────── */
+.btn-session-playpause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  flex-shrink: 0;
+  position: absolute;
+  top: 12px;
+  right: 44px; /* leaves room for delete button at right: 12px */
+  opacity: 0;
+}
+
+.session-item:hover .btn-session-playpause,
+.session-item.active .btn-session-playpause {
+  opacity: 1;
+}
+
+.btn-session-playpause:hover {
+  background: rgba(74,144,217,0.15);
+  border-color: rgba(74,144,217,0.4);
+  color: var(--blue);
+}
+
+@media (hover: none) {
+  .btn-session-playpause {
+    opacity: 0.8;
+  }
+}
+
+
 /* Pulsing session running indicator */
 .pulse-dot {
   width: 6px;
@@ -446,8 +485,9 @@ html, body {
   }
 }
 
-/* ── Clock Panel ────────────────────────────────────────────── */
+/* ── Clock Panel ──────────────────────────────────────────── */
 .clock-panel {
+  position: relative;
   flex: 0 0 52%;
   display: flex;
   flex-direction: column;
@@ -456,6 +496,135 @@ html, body {
   gap: 36px;
   padding: 32px;
   border-right: 1px solid var(--glass-border);
+}
+
+/* ── Remarks Button ─────────────────────────────────────── */
+.btn-remarks {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 50px;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  letter-spacing: 0.02em;
+}
+
+.btn-remarks:hover {
+  background: rgba(74,144,217,0.12);
+  border-color: rgba(74,144,217,0.4);
+  color: var(--blue);
+}
+
+.btn-remarks svg {
+  flex-shrink: 0;
+  transition: stroke 0.2s ease;
+}
+
+.btn-remarks:hover svg {
+  stroke: var(--blue);
+}
+
+@media (max-width: 640px) {
+  .btn-remarks span { display: none; }
+  .btn-remarks { padding: 7px; }
+}
+
+/* ── Remarks Modal ───────────────────────────────────────── */
+.remarks-modal-card {
+  width: min(560px, 94vw);
+}
+
+.remarks-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.remarks-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.remarks-modal-title-group h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.btn-remarks-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.btn-remarks-close:hover {
+  background: rgba(255,77,109,0.1);
+  border-color: rgba(255,77,109,0.3);
+  color: var(--red);
+}
+
+.remarks-textarea {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  padding: 16px 18px;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  caret-color: var(--blue);
+}
+
+.remarks-textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.remarks-textarea:focus {
+  border-color: rgba(74,144,217,0.5);
+  background: rgba(74,144,217,0.04);
+}
+
+.remarks-save-indicator {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  letter-spacing: 0.02em;
+}
+
+.remarks-save-indicator.visible {
+  opacity: 1;
 }
 
 /* ── Dial ───────────────────────────────────────────────────── */
@@ -591,6 +760,56 @@ html, body {
   100% { color: var(--text); text-shadow: none; }
 }
 
+/* ── Gap Timer ──────────────────────────────────────────────── */
+.gap-timer-container {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: max-height 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.gap-timer-container.active {
+  max-height: 80px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gap-timer-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.gap-timer-display {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+}
+
+#gap-digits {
+  font-size: 1.6rem;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--blue);
+}
+
+#gap-cs {
+  font-size: 1rem;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue);
+  opacity: 0.65;
+}
+
 /* ── Controls ───────────────────────────────────────────────── */
 .controls {
   display: flex;
@@ -709,6 +928,50 @@ html, body {
   color: var(--blue);
 }
 
+/* ── Ledger Gap rows ───────────────────────────────────── */
+.ledger-gap-row td {
+  padding: 5px 14px !important;
+  border-bottom: none !important;
+}
+
+.gap-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.gap-lap-ref {
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
+.gap-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+}
+
+.gap-arrow {
+  opacity: 0.4;
+  font-size: 0.72rem;
+}
+
+.gap-cleared-badge {
+  font-size: 0.62rem;
+  background: rgba(255,77,109,0.1);
+  border: 1px solid rgba(255,77,109,0.25);
+  color: var(--red);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+
 /* ── Slide in animation for new rows ───────────────────────── */
 @keyframes rowSlideIn {
   from { opacity: 0; transform: translateX(28px); }
@@ -776,6 +1039,33 @@ html, body {
   opacity: 0.55;
   margin-top: 4px;
 }
+
+.gap-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.gap-total-row.hidden { display: none; }
+
+.gap-total-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.gap-total-value {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue);
+}
+
 
 /* ── Modal ──────────────────────────────────────────────────── */
 .modal-overlay {
