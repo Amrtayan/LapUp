@@ -96,59 +96,71 @@
       <!-- ── LEFT PANEL: Clock ── -->
       <section class="clock-panel" aria-label="Stopwatch">
 
-        <!-- Remarks button: top-right of clock panel -->
-        <button id="btn-remarks" class="btn-remarks" title="Session Remarks" aria-label="Open Remarks">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 20h9"/>
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-          </svg>
-          <span class="btn-remarks-text">Remarks</span>
-        </button>
+        <div id="active-session-view" class="active-session-view">
+          <!-- Remarks button: top-right of clock panel -->
+          <button id="btn-remarks" class="btn-remarks" title="Session Remarks" aria-label="Open Remarks">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"/>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+            </svg>
+            <span class="btn-remarks-text">Remarks</span>
+          </button>
 
+          <div class="dial-wrapper">
+            <!-- SVG Dial -->
+            <svg class="dial-svg" id="dial-svg" viewBox="0 0 320 320" aria-hidden="true">
+              <!-- Outer decoration ring -->
+              <circle cx="160" cy="160" r="148" class="dial-deco-ring"/>
+              <!-- Tick marks -->
+              <g id="dial-ticks"></g>
+              <!-- Track ring -->
+              <circle cx="160" cy="160" r="132" class="dial-track"/>
+              <!-- Progress arc -->
+              <circle cx="160" cy="160" r="132" class="dial-progress" id="dial-progress"/>
+              <!-- Inner glow ring -->
+              <circle cx="160" cy="160" r="118" class="dial-inner-ring"/>
+            </svg>
 
-        <div class="dial-wrapper">
-          <!-- SVG Dial -->
-          <svg class="dial-svg" id="dial-svg" viewBox="0 0 320 320" aria-hidden="true">
-            <!-- Outer decoration ring -->
-            <circle cx="160" cy="160" r="148" class="dial-deco-ring"/>
-            <!-- Tick marks -->
-            <g id="dial-ticks"></g>
-            <!-- Track ring -->
-            <circle cx="160" cy="160" r="132" class="dial-track"/>
-            <!-- Progress arc -->
-            <circle cx="160" cy="160" r="132" class="dial-progress" id="dial-progress"/>
-            <!-- Inner glow ring -->
-            <circle cx="160" cy="160" r="118" class="dial-inner-ring"/>
-          </svg>
-
-          <!-- Clock display overlaid on dial -->
-          <div class="clock-overlay">
-            <div class="lap-segment-label" id="lap-segment-label">LAP 1</div>
-            <div class="clock-display" id="clock-display">
-              <span class="clock-digits" id="clock-digits">00:00:00</span>
-              <span class="clock-cs" id="clock-cs">.00</span>
+            <!-- Clock display overlaid on dial -->
+            <div class="clock-overlay">
+              <div class="lap-segment-label" id="lap-segment-label">LAP 1</div>
+              <div class="clock-display" id="clock-display">
+                <span class="clock-digits" id="clock-digits">00:00:00</span>
+                <span class="clock-cs" id="clock-cs">.00</span>
+              </div>
+              <div class="median-display" id="median-display">
+                <span class="median-icon">◎</span>
+                <span id="median-value-display">No median set</span>
+              </div>
             </div>
-            <div class="median-display" id="median-display">
-              <span class="median-icon">◎</span>
-              <span id="median-value-display">No median set</span>
+          </div>
+
+          <!-- Gap Timer (revealed when main dial is paused) -->
+          <div id="gap-timer-container" class="gap-timer-container">
+            <div class="gap-timer-label">PAUSED — GAP TIMER</div>
+            <div class="gap-timer-display">
+              <span id="gap-digits">00:00:00</span>
+              <span id="gap-cs">.00</span>
             </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="controls" id="controls">
+            <button id="btn-reset" class="btn btn-secondary" disabled>Clear Lap</button>
+            <button id="btn-start" class="btn btn-primary">Start</button>
+            <button id="btn-lap" class="btn btn-accent" disabled>Lap</button>
           </div>
         </div>
 
-        <!-- Gap Timer (revealed when main dial is paused) -->
-        <div id="gap-timer-container" class="gap-timer-container">
-          <div class="gap-timer-label">PAUSED — GAP TIMER</div>
-          <div class="gap-timer-display">
-            <span id="gap-digits">00:00:00</span>
-            <span id="gap-cs">.00</span>
-          </div>
-        </div>
-
-        <!-- Controls -->
-        <div class="controls" id="controls">
-          <button id="btn-reset" class="btn btn-secondary" disabled>Clear Lap</button>
-          <button id="btn-start" class="btn btn-primary">Start</button>
-          <button id="btn-lap" class="btn btn-accent" disabled>Lap</button>
+        <!-- No Active Session View -->
+        <div id="no-session-view" class="no-session-view hidden">
+          <button id="btn-create-session-big" class="btn-create-session-big" aria-label="Create New Session">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+          <div class="no-session-text">Create Session</div>
         </div>
 
       </section>

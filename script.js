@@ -89,6 +89,11 @@ const gapCs              = document.getElementById('gap-cs');
 const gapTotalRow        = document.getElementById('gap-total-row');
 const gapTotalValue      = document.getElementById('gap-total-value');
 
+// View toggle DOM refs
+const activeSessionView    = document.getElementById('active-session-view');
+const noSessionView        = document.getElementById('no-session-view');
+const btnCreateSessionBig  = document.getElementById('btn-create-session-big');
+
 // Dial constants
 const DIAL_RADIUS      = 132;
 const DIAL_CIRCUMF     = 2 * Math.PI * DIAL_RADIUS; // ≈ 829.38
@@ -746,14 +751,23 @@ document.addEventListener('keydown', (e) => {
 
 // Clamp numeric inputs on blur
 [inputHH, inputMM, inputSS].forEach(el => {
-  el.addEventListener('blur', () => {
-    const max = el === inputHH ? 99 : 59;
-    el.value  = clamp(parseInt(el.value) || 0, 0, max);
-  });
-  el.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addTempMedian();
+  el.addEventListener('blur', (e) => {
+    if (!e.target.value) e.target.value = '00';
+    else {
+      let val = parseInt(e.target.value, 10);
+      if (isNaN(val)) val = 0;
+      if (e.target !== inputHH && val > 59) val = 59;
+      e.target.value = val.toString().padStart(2, '0');
+    }
   });
 });
+
+// Big Create Session Button
+if (btnCreateSessionBig) {
+  btnCreateSessionBig.addEventListener('click', () => {
+    createNewSession(true);
+  });
+}
 
 // ── Sessions Management ────────────────────────────────────────
 
@@ -789,17 +803,20 @@ function loadSessions() {
 
   if (!sessions || sessions.length === 0) {
     sessions = [];
-    createNewSession(true); // Create initial default session and switch to it
+    activeSessionId = null;
+    loadActiveSession();
   } else {
-    // Load the active session ID, fallback to the most recently updated
+    // Load the active session ID if it exists and is not ended
     const savedActiveId = localStorage.getItem('laptrack_active_session_id');
     const exists = sessions.some(s => s.id === savedActiveId);
-    if (savedActiveId && exists) {
+    const savedSession = exists ? sessions.find(s => s.id === savedActiveId) : null;
+    
+    if (savedSession && savedSession.status !== 'ended') {
       activeSessionId = savedActiveId;
     } else {
-      // Sort by lastUpdated descending, take the first
-      sessions.sort((a, b) => b.lastUpdated - a.lastUpdated);
-      activeSessionId = sessions[0].id;
+      // Find the most recently updated 'active' session
+      const activeSessions = sessions.filter(s => s.status !== 'ended').sort((a, b) => b.lastUpdated - a.lastUpdated);
+      activeSessionId = activeSessions.length > 0 ? activeSessions[0].id : null;
     }
     loadActiveSession();
   }
@@ -818,8 +835,10 @@ async function syncFromCloud() {
 
   // Determine the best active session ID post-merge
   let newActiveId = result.activeSessionId || activeSessionId;
-  if (!merged.some(s => s.id === newActiveId)) {
-    newActiveId = merged.sort((a, b) => b.lastUpdated - a.lastUpdated)[0]?.id || null;
+  const newActiveSession = merged.find(s => s.id === newActiveId);
+  if (!newActiveSession || newActiveSession.status === 'ended') {
+    const activeSessions = merged.filter(s => s.status !== 'ended').sort((a, b) => b.lastUpdated - a.lastUpdated);
+    newActiveId = activeSessions.length > 0 ? activeSessions[0].id : null;
   }
 
   sessions = merged;
@@ -879,7 +898,21 @@ function saveActiveSessionState() {
 
 // Load active session state into stopwatch live variables
 function loadActiveSession() {
-  if (!activeSessionId) return;
+  if (!activeSessionId) {
+    activeSessionView.classList.add('hidden');
+    noSessionView.classList.remove('hidden');
+    
+    // Clear ledger
+    ledgerBody.innerHTML = '';
+    updateNetDeficit();
+    ledgerEmpty.classList.remove('hidden');
+    renderSessionsList();
+    return;
+  }
+
+  activeSessionView.classList.remove('hidden');
+  noSessionView.classList.add('hidden');
+
   const session = sessions.find(s => s.id === activeSessionId);
   if (session) {
     // If the stopwatch is running, pause it first (safety)
@@ -904,15 +937,25 @@ function loadActiveSession() {
     isGapRunning = false; // don't auto-start RAF on load
     gapLastTimestamp = null;
 
+    const isEnded = session.status === 'ended';
+
     // Update buttons state
-    if (elapsedMs > 0 || gapElapsedMs > 0) {
-      btnReset.disabled = false;
-      btnStart.textContent = 'Resume';
-    } else {
+    if (isEnded) {
+      btnStart.textContent = 'Ended';
+      btnStart.disabled = true;
+      btnLap.disabled = true;
       btnReset.disabled = true;
-      btnStart.textContent = 'Start';
+    } else {
+      if (elapsedMs > 0 || gapElapsedMs > 0) {
+        btnReset.disabled = false;
+        btnStart.textContent = 'Resume';
+      } else {
+        btnReset.disabled = true;
+        btnStart.textContent = 'Start';
+      }
+      btnStart.disabled = false;
+      btnLap.disabled = true; // disabled until started
     }
-    btnLap.disabled = true; // disabled until started
 
     // Render components
     renderClock(elapsedMs);
@@ -925,7 +968,7 @@ function loadActiveSession() {
     setClockColor(null);
 
     // Restore gap UI state (show frozen gap if there was one, without auto-starting)
-    if (gapElapsedMs > 0) {
+    if (gapElapsedMs > 0 && !isEnded) {
       renderGapClock();
       showGapUI();
     } else {
@@ -961,6 +1004,9 @@ function createNewSession(switchToIt = true) {
   const newSession = {
     id: id,
     name: generateSessionName(),
+    status: 'active',
+    startTime: Date.now(),
+    endTime: null,
     elapsedMs: 0,
     lapStartMs: 0,
     lapMedianMs: lapMedianMs, // carry over legacy field
@@ -1050,9 +1096,10 @@ function renderSessionsList() {
     const isActive = s.id === activeSessionId;
     const isRunningSession = isActive && isRunning;
     const isGapSession     = isActive && isGapRunning;
+    const isEnded = s.status === 'ended';
 
     // Sidebar play/pause button (active session only)
-    const showPlayPause = isActive && (isRunning || isGapRunning || gapElapsedMs > 0);
+    const showPlayPause = !isEnded && isActive && (isRunning || isGapRunning || gapElapsedMs > 0);
     const ppTitle  = isRunning ? 'Hard-pause session' : isGapRunning ? 'Pause gap timer' : 'Resume gap timer';
     const ppIcon   = (!isRunning && !isGapRunning && gapElapsedMs > 0)
       // Play icon
@@ -1061,6 +1108,17 @@ function renderSessionsList() {
       : `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
     const ppBtn = showPlayPause
       ? `<button class="btn-session-playpause" onclick="toggleSessionGapTimer(event)" title="${ppTitle}" aria-label="${ppTitle}">${ppIcon}</button>`
+      : '';
+    
+    // Time range formatting
+    const startTimeStr = s.startTime ? new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+    const endTimeStr = s.endTime ? new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'In Progress';
+    const timeRangeStr = `${startTimeStr} - ${endTimeStr}`;
+    
+    // End button: show when session is active, not ended, dial is paused, gap timer is paused
+    const showEndButton = isActive && !isEnded && !isRunning && !isGapRunning;
+    const endBtnHtml = showEndButton 
+      ? `<button class="btn-end-session" onclick="endSession('${s.id}', event)">End</button>`
       : '';
     
     const lapItems  = s.laps.filter(l => !l.type || l.type === 'lap');
@@ -1092,6 +1150,8 @@ function renderSessionsList() {
             <span class="session-deficit ${netClass}">${netDefStr}</span>
             ${runningIndicator}
           </div>
+          <div class="session-time-range">${timeRangeStr}</div>
+          ${endBtnHtml}
         </div>
         ${ppBtn}
         <button class="btn-delete-session" onclick="deleteSession('${s.id}', event)" title="Delete session" aria-label="Delete Session">
@@ -1110,6 +1170,33 @@ function renderSessionsList() {
 // Expose functions globally for dynamic elements
 window.selectSession = selectSession;
 window.deleteSession = deleteSession;
+
+window.endSession = function(id, event) {
+  if (event) event.stopPropagation();
+  const session = sessions.find(s => s.id === id);
+  if (!session || session.status === 'ended') return;
+  
+  session.status = 'ended';
+  session.endTime = Date.now();
+  session.lastUpdated = Date.now();
+  
+  if (id === activeSessionId) {
+    // Finalize any running gaps or dial
+    if (isRunning) {
+      startStop();
+    }
+    if (isGapRunning || gapElapsedMs > 0) {
+      finalizeGap(false);
+      hideGapUI();
+    }
+    saveActiveSessionState(); // one final save
+    activeSessionId = null;
+    loadActiveSession();
+  } else {
+    saveSessions();
+    renderSessionsList();
+  }
+};
 
 // ── Sidebar session gap-timer toggle ───────────────────────────
 function toggleSessionGapTimer(event) {
