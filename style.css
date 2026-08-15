@@ -964,7 +964,6 @@ html, body {
 
 .ledger-table tbody tr {
   border-bottom: 1px solid rgba(255,255,255,0.04);
-  animation: rowSlideIn 0.35s cubic-bezier(0.22,1,0.36,1) both;
 }
 
 .ledger-table tbody tr:last-child { border-bottom: none; }
@@ -1019,30 +1018,19 @@ html, body {
   color: var(--blue);
   cursor: pointer;
   opacity: 0;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 4px;
 }
 
-.ledger-lap-row:hover .btn-hide-deficit {
-  opacity: 1;
-}
-
 .btn-hide-deficit.excluded {
-  opacity: 0.5;
   color: var(--text-muted);
 }
 
-.ledger-lap-row:hover .btn-hide-deficit.excluded {
+.ledger-lap-row.mobile-show .btn-hide-deficit {
   opacity: 1;
-}
-
-@media (hover: none) {
-  .btn-hide-deficit {
-    opacity: 0.6;
-  }
 }
 
 
@@ -1107,12 +1095,6 @@ html, body {
   text-transform: uppercase;
 }
 
-
-/* ── Slide in animation for new rows ───────────────────────── */
-@keyframes rowSlideIn {
-  from { opacity: 0; transform: translateX(28px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
 
 /* ── Empty state ────────────────────────────────────────────── */
 .ledger-empty {

@@ -21,6 +21,7 @@ let lapCounter  = 1;          // next lap number
 let lastSavedElapsedMs = 0;   // last elapsedMs at which we autosaved
 let clearStopwatchWithLap = true; // permanently true
 let tempMedians = [];         // temporary medians list for Set Lap Cycle modal
+let mobileShowStates = {};    // tracks independent timeouts for each lap's eye icon
 
 // ── Gap Timer State ──────────────────────────────────────────
 let gapElapsedMs      = 0;    // ms in the currently-running / accumulated gap
@@ -573,13 +574,13 @@ function renderLedger() {
     const eyeIconClosed = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
     
     const excludeBtnHtml = hasTarget ? `
-      <button class="btn-hide-deficit ${item.excludeDeficit ? 'excluded' : ''}" onclick="toggleDeficit(${item.originalIndex})" title="${item.excludeDeficit ? 'Include deficit' : 'Exclude deficit'}">
+      <button class="btn-hide-deficit ${item.excludeDeficit ? 'excluded' : ''}" onclick="toggleDeficit(event, ${item.originalIndex})" title="${item.excludeDeficit ? 'Include deficit' : 'Exclude deficit'}">
         ${item.excludeDeficit ? eyeIconClosed : eyeIconOpen}
       </button>
     ` : '';
 
     return `
-      <tr class="ledger-lap-row ${item.excludeDeficit ? 'deficit-excluded' : ''}">
+      <tr id="lap-row-${item.originalIndex}" class="ledger-lap-row ${item.excludeDeficit ? 'deficit-excluded' : ''} ${mobileShowStates[item.originalIndex] ? 'mobile-show' : ''}" onclick="showHideDeficitBtn(this, ${item.originalIndex})">
         <td class="lap-num">${pad(item.lapNum)}</td>
         <td class="lap-time">${lapStr}</td>
         <td class="lap-deficit ${defClass}">
@@ -1197,12 +1198,43 @@ function renderSessionsList() {
 window.selectSession = selectSession;
 window.deleteSession = deleteSession;
 
-window.toggleDeficit = function(index) {
+window.toggleDeficit = function(event, index) {
+  if (event) event.stopPropagation();
   if (laps[index]) {
     laps[index].excludeDeficit = !laps[index].excludeDeficit;
+    
+    // Refresh the independent mobile-show timer to keep it visible after interacting
+    if (mobileShowStates[index]) {
+      clearTimeout(mobileShowStates[index]);
+    }
+    
+    mobileShowStates[index] = setTimeout(() => {
+      delete mobileShowStates[index];
+      const currentEl = document.getElementById(`lap-row-${index}`);
+      if (currentEl) {
+        currentEl.classList.remove('mobile-show');
+      }
+    }, 2000);
+
     saveActiveSessionState();
     renderLedger();
   }
+};
+
+window.showHideDeficitBtn = function(rowEl, index) {
+  rowEl.classList.add('mobile-show');
+  
+  if (mobileShowStates[index]) {
+    clearTimeout(mobileShowStates[index]);
+  }
+  
+  mobileShowStates[index] = setTimeout(() => {
+    delete mobileShowStates[index];
+    const currentEl = document.getElementById(`lap-row-${index}`);
+    if (currentEl) {
+      currentEl.classList.remove('mobile-show');
+    }
+  }, 2000);
 };
 
 window.endSession = function(id, event) {

@@ -27,7 +27,7 @@ The app uses a modular scale of `rem` units to establish hierarchy:
 The main app background isn't just a flat color; it's a dynamic, space-like ambient glow. It uses a composite of the deep navy base (`#070b18`) overlaid with two large, subtle, off-center radial gradients—one electric blue and one indigo—that fade out at 70%, creating soft, glowing orbs behind the frosted glass panels.
 
 ### 6. Icons
-The icons are **custom inline SVGs** designed in a minimalist, geometric line-art style (very similar to *Feather Icons* or *Lucide*). They strictly use `stroke="currentColor"` (or specific accent colors), `fill="none"`, `stroke-width="2"` or `2.5`, and rounded line caps/joins. This keeps the iconography lightweight, consistent, and easily animatable. Some icons, like the "hide deficit" eye in the ledger, use stateful designs (switching between open and closed-eye paths) to give clear visual feedback.
+The icons are **custom inline SVGs** designed in a minimalist, geometric line-art style (very similar to *Feather Icons* or *Lucide*). They strictly use `stroke="currentColor"` (or specific accent colors), `fill="none"`, `stroke-width="2"` or `2.5`, and rounded line caps/joins. This keeps the iconography lightweight, consistent, and easily animatable. Some icons, like the "hide deficit" eye in the ledger, use stateful designs (switching between open and closed-eye paths) to give clear visual feedback, accompanied by smooth 0.3s opacity transitions when tapped.
 
 ### 7. Main Dial Appearance
 The central stopwatch dial is the focal point of the app, built using layered SVGs (320x320px):
@@ -58,4 +58,3 @@ Visual empty states are provided when no data is present:
 The app uses subtle CSS animations to enhance the experience:
 * **Success Flash:** The clock digits flash green (`flash-green` keyframes) momentarily if a lap is completed under the target time.
 * **Pulse Indicators:** Used on the net-deficit value when updating, and continuously on the green cloud-sync indicator.
-* **Row Slide-in:** New ledger rows enter via a cubic-bezier slide-in animation (`rowSlideIn`).

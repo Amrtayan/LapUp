@@ -34,5 +34,5 @@ It operates on the principle of Laps, Lap Medians, Lap Cycles, and Lap Deficit.
 - Session-Resume/Hard-Resume: Resumes both the main dial and the gap-timer.
 - End-Session: Closes the session, saves it to history, and makes it view-only.
 - Remarks: Adds remarks to the session.
-- Hide Deficit: An eye icon in the Lap Deficit Ledger that appears on hover, used to omit/exclude a specific lap's deficit from the session's net deficit calculation.
+- Hide Deficit: An eye icon in the Lap Deficit Ledger. It is hidden by default to keep the UI clean. Clicking or tapping a lap row causes the icon to smoothly fade in for 2 seconds (handled by independent timers per row) before fading out. Toggling it omits/excludes that specific lap's deficit from the session's net deficit calculation.
 
