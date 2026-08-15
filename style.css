@@ -995,6 +995,57 @@ html, body {
 .lap-deficit.under { color: var(--green);  }
 .lap-deficit.exact { color: var(--text-muted); }
 
+/* Hide Deficit feature styling */
+.lap-deficit {
+  position: relative;
+}
+
+.deficit-text {
+  transition: opacity 0.2s ease;
+}
+
+.ledger-lap-row.deficit-excluded .deficit-text {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.btn-hide-deficit {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--blue);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.ledger-lap-row:hover .btn-hide-deficit {
+  opacity: 1;
+}
+
+.btn-hide-deficit.excluded {
+  opacity: 0.5;
+  color: var(--text-muted);
+}
+
+.ledger-lap-row:hover .btn-hide-deficit.excluded {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .btn-hide-deficit {
+    opacity: 0.6;
+  }
+}
+
+
 /* ── Ledger Cycle Header separator row ── */
 .ledger-cycle-header td {
   padding: 12px 14px 8px !important;
