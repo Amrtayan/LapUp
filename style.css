@@ -440,8 +440,15 @@ html, body {
 }
 
 .btn-delete-session:hover {
-  background: rgba(255, 77, 109, 0.15);
+  background: rgba(255,255,255,0.06);
   color: var(--red);
+  opacity: 1 !important;
+}
+
+.btn-delete-session.confirm-mode {
+  background: rgba(255, 77, 109, 0.15) !important;
+  color: var(--red) !important;
+  opacity: 1 !important;
 }
 
 @media (hover: none) {
