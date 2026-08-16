@@ -788,9 +788,12 @@ if (btnCreateSessionBig) {
 
 // ── Sessions Management ────────────────────────────────────────
 
-// Format today's date as YYYY-MM-DD
+// Format today's date as YYYY-MM-DD (Day rolls over at 4:00 AM)
 function getLocalDateString() {
   const d = new Date();
+  // Shift the time back by 4 hours. 
+  // This causes times between 12:00 AM and 3:59 AM to fall into the previous day.
+  d.setHours(d.getHours() - 4);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
