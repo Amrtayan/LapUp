@@ -367,6 +367,15 @@ function startStop() {
     btnStart.textContent = 'Pause';
     btnLap.disabled      = false;
     btnReset.disabled    = false;
+    
+    // Set startTime on very first start
+    if (activeSessionId) {
+      const session = sessions.find(s => s.id === activeSessionId);
+      if (session && session.startTime === null) {
+        session.startTime = Date.now();
+      }
+    }
+
     rafId = requestAnimationFrame(tick);
     saveActiveSessionState();
   }
@@ -816,6 +825,20 @@ function loadSessions() {
     const data = localStorage.getItem('laptrack_sessions');
     if (data) {
       sessions = JSON.parse(data);
+      // Migration: compute direct analytics properties if missing
+      sessions.forEach(s => {
+        if (s.netDeficitMs === undefined) {
+          const lapItems = s.laps.filter(l => !l.type || l.type === 'lap');
+          s.netDeficitMs = lapItems.reduce((acc, l) => acc + (l.deficitMs || 0), 0);
+        }
+        if (s.totalGapTimeMs === undefined) {
+          const gapItems = s.laps.filter(l => l.type === 'gap');
+          s.totalGapTimeMs = gapItems.reduce((acc, g) => acc + (g.lapMs || 0), 0);
+        }
+        if (s.gapCount === undefined) {
+          s.gapCount = s.laps.filter(l => l.type === 'gap').length;
+        }
+      });
     }
   } catch (e) {
     console.error('Error loading sessions from localStorage:', e);
@@ -826,19 +849,32 @@ function loadSessions() {
     activeSessionId = null;
     loadActiveSession();
   } else {
-    // Load the active session ID if it exists and is not ended
-    const savedActiveId = localStorage.getItem('laptrack_active_session_id');
-    const exists = sessions.some(s => s.id === savedActiveId);
-    const savedSession = exists ? sessions.find(s => s.id === savedActiveId) : null;
+    // 1. Check URL for session
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionParam = urlParams.get('session');
     
-    if (savedSession && savedSession.status !== 'ended') {
-      activeSessionId = savedActiveId;
+    if (sessionParam && sessions.some(s => s.id === sessionParam)) {
+      activeSessionId = sessionParam;
     } else {
-      // Find the most recently updated 'active' session
-      const activeSessions = sessions.filter(s => s.status !== 'ended').sort((a, b) => b.lastUpdated - a.lastUpdated);
-      activeSessionId = activeSessions.length > 0 ? activeSessions[0].id : null;
+      // 2. Fallback to localStorage or most recent
+      const savedActiveId = localStorage.getItem('laptrack_active_session_id');
+      const exists = sessions.some(s => s.id === savedActiveId);
+      const savedSession = exists ? sessions.find(s => s.id === savedActiveId) : null;
+      
+      if (savedSession && savedSession.status !== 'ended') {
+        activeSessionId = savedActiveId;
+      } else {
+        const activeSessions = sessions.filter(s => s.status !== 'ended').sort((a, b) => b.lastUpdated - a.lastUpdated);
+        activeSessionId = activeSessions.length > 0 ? activeSessions[0].id : null;
+      }
     }
+    
     loadActiveSession();
+
+    // Auto-close sidebar on mobile if loaded from URL
+    if (sessionParam && window.innerWidth <= 800 && sidebar) {
+      sidebar.classList.remove('active');
+    }
   }
 }
 
@@ -852,17 +888,24 @@ async function syncFromCloud() {
   }
 
   const merged = mergeSessions(sessions, result.sessions);
-
-  // Determine the best active session ID post-merge
-  let newActiveId = result.activeSessionId || activeSessionId;
-  const newActiveSession = merged.find(s => s.id === newActiveId);
-  if (!newActiveSession || newActiveSession.status === 'ended') {
-    const activeSessions = merged.filter(s => s.status !== 'ended').sort((a, b) => b.lastUpdated - a.lastUpdated);
-    newActiveId = activeSessions.length > 0 ? activeSessions[0].id : null;
-  }
-
   sessions = merged;
-  activeSessionId = newActiveId;
+
+  // Prefer URL-specified session over cloud's active session
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlSession = urlParams.get('session');
+  
+  if (urlSession && merged.some(s => s.id === urlSession)) {
+    activeSessionId = urlSession;
+  } else {
+    // Determine the best active session ID post-merge
+    let newActiveId = result.activeSessionId || activeSessionId;
+    const newActiveSession = merged.find(s => s.id === newActiveId);
+    if (!newActiveSession || newActiveSession.status === 'ended') {
+      const activeSessions = merged.filter(s => s.status !== 'ended').sort((a, b) => b.lastUpdated - a.lastUpdated);
+      newActiveId = activeSessions.length > 0 ? activeSessions[0].id : null;
+    }
+    activeSessionId = newActiveId;
+  }
 
   // Persist merged state locally
   localStorage.setItem('laptrack_sessions', JSON.stringify(sessions));
@@ -910,6 +953,15 @@ function saveActiveSessionState() {
     session.remarks = remarksTextarea.value;
     session.gapElapsedMs = gapElapsedMs;
     session.currentGapLapNum = currentGapLapNum;
+    
+    // Direct analytics properties
+    const lapItems = session.laps.filter(l => !l.type || l.type === 'lap');
+    session.netDeficitMs = lapItems.reduce((acc, l) => acc + (l.deficitMs || 0), 0);
+    
+    const gapItems = session.laps.filter(l => l.type === 'gap');
+    session.totalGapTimeMs = gapItems.reduce((acc, g) => acc + (g.lapMs || 0), 0);
+    session.gapCount = gapItems.length;
+
     session.lastUpdated = Date.now();
     saveSessions();
     renderSessionsList();
@@ -1035,7 +1087,7 @@ function createNewSession(switchToIt = true) {
     id: id,
     name: generateSessionName(),
     status: 'active',
-    startTime: Date.now(),
+    startTime: null,
     endTime: null,
     elapsedMs: 0,
     lapStartMs: 0,
@@ -1044,7 +1096,10 @@ function createNewSession(switchToIt = true) {
     laps: initialLaps,
     remarks: '',
     createdTime: Date.now(),
-    lastUpdated: Date.now()
+    lastUpdated: Date.now(),
+    netDeficitMs: 0,
+    totalGapTimeMs: 0,
+    gapCount: 0
   };
 
   sessions.push(newSession);
@@ -1140,6 +1195,7 @@ function renderSessionsList() {
   if (!sessionsList) return;
 
   const sortedSessions = [...sessions].sort((a, b) => b.createdTime - a.createdTime);
+  const linkedSessionIds = getLinkedSessionIds();
 
   sessionsList.innerHTML = sortedSessions.map(s => {
     const isActive = s.id === activeSessionId;
@@ -1189,6 +1245,21 @@ function renderSessionsList() {
 
     const runningIndicator = isRunningSession ? '<span class="pulse-dot" title="Stopwatch Running"></span>' : '';
 
+    let linkBtnHtml = '';
+    if (isEnded) {
+      const isLinked = linkedSessionIds.has(s.id);
+      const linkClass = isLinked ? 'btn-link-session linked-active' : 'btn-link-session';
+      const linkOnclick = isLinked ? `navigateToGoalTracker('${s.id}', event)` : `openLinkToGoal('${s.id}', event)`;
+      const linkTitle = isLinked ? 'View in Goal Tracker' : 'Link to Goal Tracker';
+      
+      linkBtnHtml = `<button class="${linkClass}" onclick="${linkOnclick}" title="${linkTitle}" aria-label="${linkTitle}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </button>`;
+    }
+
     return `
       <div class="session-item ${isActive ? 'active' : ''}" onclick="selectSession('${s.id}')">
         <div class="session-info">
@@ -1203,6 +1274,7 @@ function renderSessionsList() {
           ${endBtnHtml}
         </div>
         ${ppBtn}
+        ${linkBtnHtml}
         <button class="btn-delete-session" onclick="confirmDeleteSession(this, '${s.id}', event)" title="Delete session" aria-label="Delete Session">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"/>
@@ -1219,6 +1291,245 @@ function renderSessionsList() {
 // Expose functions globally for dynamic elements
 window.selectSession = selectSession;
 window.deleteSession = deleteSession;
+
+// ── Link-to-Goal Feature ─────────────────────────────────────────
+const GOALS_STORAGE_PREFIX = 'lapup_goals_';
+const LINK_COLORS = ['#4a90d9', '#8a2be2', '#00e676', '#ff4d6d', '#f5a623', '#00bcd4'];
+let linkSelectedColor = LINK_COLORS[0];
+let linkSessionId = null;
+
+function dateToKey(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function getGoalTasks(dateKey) {
+  const raw = localStorage.getItem(GOALS_STORAGE_PREFIX + dateKey);
+  return raw ? JSON.parse(raw) : [];
+}
+
+function saveGoalTasks(dateKey, tasks) {
+  localStorage.setItem(GOALS_STORAGE_PREFIX + dateKey, JSON.stringify(tasks));
+}
+
+function getLinkedSessionIds() {
+  const linked = new Set();
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key.startsWith(GOALS_STORAGE_PREFIX)) {
+      try {
+        const tasks = JSON.parse(localStorage.getItem(key));
+        if (Array.isArray(tasks)) {
+          tasks.forEach(t => {
+            if (Array.isArray(t.entries)) {
+              t.entries.forEach(e => {
+                if (e.linkedSession) linked.add(e.linkedSession);
+              });
+            }
+          });
+        }
+      } catch (err) {}
+    }
+  }
+  return linked;
+}
+
+window.navigateToGoalTracker = function(sessionId, event) {
+  if (event) event.stopPropagation();
+  window.location.href = `./goal-tracker.html?linked_session=${sessionId}`;
+};
+
+/**
+ * Populate the task <select> with tasks from the chosen date's goal data.
+ */
+function populateLinkTaskSelect() {
+  const dateInput = document.getElementById('link-date-input');
+  const select = document.getElementById('link-task-select');
+  if (!dateInput || !select) return;
+
+  const dateKey = dateInput.value; // 'YYYY-MM-DD'
+  const tasks = getGoalTasks(dateKey);
+
+  // Clear options, keep placeholder
+  select.innerHTML = '<option value="" disabled selected>Select a task…</option>';
+
+  tasks.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    opt.style.color = t.color;
+    select.appendChild(opt);
+  });
+}
+
+function openLinkToGoal(sessionId, event) {
+  if (event) event.stopPropagation();
+  linkSessionId = sessionId;
+
+  const session = sessions.find(s => s.id === sessionId);
+  if (!session) return;
+
+  const modal = document.getElementById('link-goal-modal');
+  const dateInput = document.getElementById('link-date-input');
+  const startInput = document.getElementById('link-start-time');
+  const endInput = document.getElementById('link-end-time');
+  const pctInput = document.getElementById('link-progress-pct');
+  const newTaskRow = document.getElementById('link-new-task-row');
+
+  // Pre-fill date from session
+  const sessionDate = session.startTime ? new Date(session.startTime) : new Date();
+  dateInput.value = dateToKey(sessionDate);
+
+  // Pre-fill start/end times from session
+  if (session.startTime) {
+    const sd = new Date(session.startTime);
+    startInput.value = String(sd.getHours()).padStart(2, '0') + ':' + String(sd.getMinutes()).padStart(2, '0');
+  } else {
+    startInput.value = '';
+  }
+
+  if (session.endTime) {
+    const ed = new Date(session.endTime);
+    endInput.value = String(ed.getHours()).padStart(2, '0') + ':' + String(ed.getMinutes()).padStart(2, '0');
+  } else {
+    endInput.value = '';
+  }
+
+  pctInput.value = '';
+  newTaskRow.classList.add('hidden');
+
+  // Populate task list for this date
+  populateLinkTaskSelect();
+
+  // Reset color picker
+  linkSelectedColor = LINK_COLORS[Math.floor(Math.random() * LINK_COLORS.length)];
+  syncLinkColorDots();
+
+  modal.classList.add('active');
+  setTimeout(() => pctInput.focus(), 120);
+}
+
+function closeLinkGoalModal() {
+  const modal = document.getElementById('link-goal-modal');
+  if (modal) modal.classList.remove('active');
+  linkSessionId = null;
+}
+
+function syncLinkColorDots() {
+  const picker = document.getElementById('link-color-picker');
+  if (!picker) return;
+  picker.querySelectorAll('.gt-color-dot').forEach(d => {
+    d.classList.toggle('selected', d.dataset.color === linkSelectedColor);
+  });
+}
+
+function saveLinkProgress() {
+  const dateInput = document.getElementById('link-date-input');
+  const select = document.getElementById('link-task-select');
+  const pctInput = document.getElementById('link-progress-pct');
+  const startInput = document.getElementById('link-start-time');
+  const endInput = document.getElementById('link-end-time');
+  const newTaskRow = document.getElementById('link-new-task-row');
+  const newTaskName = document.getElementById('link-new-task-name');
+
+  const dateKey = dateInput.value;
+  if (!dateKey) return;
+
+  const pct = parseInt(pctInput.value, 10);
+  const start = startInput.value;
+  const end = endInput.value;
+
+  // Validation
+  if (!pct || pct < 1 || pct > 100) { pctInput.focus(); return; }
+  if (!start || !end) return;
+
+  let tasks = getGoalTasks(dateKey);
+  let taskId = select.value;
+
+  // If inline "new task" is showing, create a new task
+  if (!newTaskRow.classList.contains('hidden') && newTaskName.value.trim()) {
+    const name = newTaskName.value.trim();
+    const newTask = {
+      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      name: name,
+      color: linkSelectedColor || LINK_COLORS[0],
+      entries: []
+    };
+    tasks.push(newTask);
+    taskId = newTask.id;
+  }
+
+  if (!taskId) { select.focus(); return; }
+
+  // Find the task and add the entry
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  task.entries.push({
+    percent: pct,
+    startTime: start,
+    endTime: end,
+    linkedSession: linkSessionId || null
+  });
+
+  saveGoalTasks(dateKey, tasks);
+  closeLinkGoalModal();
+}
+
+// Wire up Link modal UI on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('link-goal-modal');
+  const dateInput = document.getElementById('link-date-input');
+  const btnAddTask = document.getElementById('btn-link-add-task');
+  const newTaskRow = document.getElementById('link-new-task-row');
+  const colorPicker = document.getElementById('link-color-picker');
+  const btnCancel = document.getElementById('btn-link-cancel');
+  const btnSave = document.getElementById('btn-link-save');
+
+  if (!modal) return;
+
+  // Date change → refresh task list
+  if (dateInput) dateInput.addEventListener('change', populateLinkTaskSelect);
+
+  // Toggle inline add-task row
+  if (btnAddTask) {
+    btnAddTask.addEventListener('click', () => {
+      newTaskRow.classList.toggle('hidden');
+      if (!newTaskRow.classList.contains('hidden')) {
+        document.getElementById('link-new-task-name').focus();
+      }
+    });
+  }
+
+  // Color dot selection
+  if (colorPicker) {
+    colorPicker.querySelectorAll('.gt-color-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        linkSelectedColor = dot.dataset.color;
+        syncLinkColorDots();
+      });
+    });
+  }
+
+  // Cancel / Save
+  if (btnCancel) btnCancel.addEventListener('click', closeLinkGoalModal);
+  if (btnSave) btnSave.addEventListener('click', saveLinkProgress);
+
+  // Overlay click → close
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeLinkGoalModal();
+  });
+
+  // Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.classList.contains('active')) {
+      closeLinkGoalModal();
+    }
+  });
+});
+
+window.openLinkToGoal = openLinkToGoal;
 
 window.toggleDeficit = function(event, index) {
   if (event) event.stopPropagation();

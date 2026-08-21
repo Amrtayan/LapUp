@@ -79,6 +79,24 @@
 
       <!-- ── SIDEBAR: Study Sessions ── -->
       <aside class="sidebar" id="sidebar">
+        <nav class="sidebar-nav">
+          <a href="goal-tracker.html" class="sidebar-nav-link" id="nav-goal-tracker">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <span>GOAL TRACKER</span>
+          </a>
+          <a href="index.html" class="sidebar-nav-link active" id="nav-sessions">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>SESSIONS</span>
+          </a>
+        </nav>
         <div class="sidebar-header">
           <button id="btn-create-session" class="btn btn-primary btn-create-session" title="Create a new study session">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -287,6 +305,71 @@
         aria-label="Session remarks"
       ></textarea>
       <div class="remarks-save-indicator" id="remarks-save-indicator">Saved</div>
+    </div>
+  </div>
+
+  <!-- ── LINK TO GOAL MODAL ── -->
+  <div class="modal-overlay" id="link-goal-modal" role="dialog" aria-modal="true" aria-labelledby="link-goal-title">
+    <div class="modal-card">
+      <h3 id="link-goal-title">Link to Goal Tracker</h3>
+      <p class="modal-desc">Log this session's progress against a goal on the tracker.</p>
+
+      <!-- Task Selector -->
+      <div class="gt-input-group">
+        <label for="link-task-select">Task</label>
+        <div class="link-task-row">
+          <select id="link-task-select" class="gt-text-input link-select">
+            <option value="" disabled selected>Select a task…</option>
+          </select>
+          <button type="button" class="btn-link-add-task" id="btn-link-add-task" title="Add new task">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Inline new task name (hidden by default) -->
+        <div class="link-new-task-row hidden" id="link-new-task-row">
+          <input type="text" id="link-new-task-name" class="gt-text-input" placeholder="New task name" maxlength="40" autocomplete="off" />
+          <div class="gt-color-picker-mini" id="link-color-picker">
+            <button class="gt-color-dot" data-color="#4a90d9" style="--swatch:#4a90d9" type="button"></button>
+            <button class="gt-color-dot" data-color="#8a2be2" style="--swatch:#8a2be2" type="button"></button>
+            <button class="gt-color-dot" data-color="#00e676" style="--swatch:#00e676" type="button"></button>
+            <button class="gt-color-dot" data-color="#ff4d6d" style="--swatch:#ff4d6d" type="button"></button>
+            <button class="gt-color-dot" data-color="#f5a623" style="--swatch:#f5a623" type="button"></button>
+            <button class="gt-color-dot" data-color="#00bcd4" style="--swatch:#00bcd4" type="button"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Date -->
+      <div class="gt-input-group">
+        <label for="link-date-input">Date</label>
+        <input type="date" id="link-date-input" class="gt-text-input" />
+      </div>
+
+      <!-- Progress % -->
+      <div class="gt-input-group">
+        <label for="link-progress-pct">Completion %</label>
+        <input type="number" id="link-progress-pct" class="gt-text-input" min="1" max="100" placeholder="e.g. 25" />
+      </div>
+
+      <!-- Time Range -->
+      <div class="gt-time-row">
+        <div class="gt-input-group">
+          <label for="link-start-time">Start Time</label>
+          <input type="time" id="link-start-time" class="gt-text-input" />
+        </div>
+        <span class="gt-time-sep">→</span>
+        <div class="gt-input-group">
+          <label for="link-end-time">End Time</label>
+          <input type="time" id="link-end-time" class="gt-text-input" />
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btn-link-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="btn-link-save" type="button">Link Progress</button>
+      </div>
     </div>
   </div>
 
