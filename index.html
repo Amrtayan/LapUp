@@ -96,6 +96,17 @@
             </svg>
             <span>SESSIONS</span>
           </a>
+          <a href="calendar.html" class="sidebar-nav-link" id="nav-calendar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+              <line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/>
+              <line x1="8" y1="18" x2="8" y2="18"/><line x1="12" y1="18" x2="12" y2="18"/>
+            </svg>
+            <span>CALENDAR</span>
+          </a>
         </nav>
         <div class="sidebar-header">
           <button id="btn-create-session" class="btn btn-primary btn-create-session" title="Create a new study session">
@@ -222,7 +233,7 @@
           </div>
           <div class="net-subtext" id="net-subtext">Record your first lap to begin tracking</div>
           <div class="gap-total-row" id="dial-total-row">
-            <span class="gap-total-label">Total Dial Time</span>
+            <span class="gap-total-label">Total Session Time</span>
             <span class="gap-total-value" id="dial-total-value">00:00:00</span>
           </div>
           <div class="gap-total-row hidden" id="gap-total-row">
@@ -301,6 +312,11 @@
         </button>
       </div>
       <p class="modal-desc">Summarise what was covered in this session. Notes are saved automatically.</p>
+      <div class="efficiency-row">
+        <label for="efficiency-input" class="efficiency-label">Efficiency</label>
+        <input type="number" id="efficiency-input" class="efficiency-input" min="0" max="1" step="0.01" placeholder="0 – 1" inputmode="decimal" aria-label="Session efficiency (0 to 1)" />
+        <span class="efficiency-hint">0 – 1</span>
+      </div>
       <textarea
         id="remarks-textarea"
         class="remarks-textarea"

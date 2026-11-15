@@ -452,6 +452,8 @@ html, body {
 }
 .session-deficit.over { color: var(--red); }
 .session-deficit.under { color: var(--green); }
+.session-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+.session-efficiency { font-weight: 600; color: var(--blue); font-variant-numeric: tabular-nums; }
 
 .btn-delete-session {
   position: absolute;
@@ -895,6 +897,43 @@ html, body {
   background: rgba(255,77,109,0.1);
   border-color: rgba(255,77,109,0.3);
   color: var(--red);
+}
+
+.efficiency-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.efficiency-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.efficiency-input {
+  width: 90px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  padding: 8px 12px;
+  outline: none;
+  caret-color: var(--blue);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.efficiency-input:focus {
+  border-color: rgba(74,144,217,0.5);
+  background: rgba(74,144,217,0.04);
+}
+.efficiency-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 .remarks-textarea {
@@ -1409,6 +1448,7 @@ html, body {
   font-variant-numeric: tabular-nums;
   color: var(--blue);
 }
+#dial-total-value { color: #fff; }
 
 
 /* ── Modal ──────────────────────────────────────────────────── */

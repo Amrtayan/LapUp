@@ -82,6 +82,7 @@ const modalCycleList     = document.getElementById('modal-cycle-list');
 const btnRemarks         = document.getElementById('btn-remarks');
 const remarksModalOverlay = document.getElementById('remarks-modal-overlay');
 const remarksTextarea    = document.getElementById('remarks-textarea');
+const efficiencyInput    = document.getElementById('efficiency-input');
 const remarksSaveIndicator = document.getElementById('remarks-save-indicator');
 const btnRemarksClose    = document.getElementById('btn-remarks-close');
 
@@ -171,9 +172,21 @@ function renderClock(ms) {
   const { main, cs } = msToHHMMSScs(ms);
   clockDigits.textContent = main;
   clockCs.textContent     = cs;
-  // Keep ledger's total dial time in sync (only touch DOM when the second changes)
-  if (dialTotalValue && dialTotalValue.textContent !== main) {
-    dialTotalValue.textContent = main;
+  renderSessionTotal(ms);
+}
+
+// Total session time = all recorded lap times + the lap currently in progress.
+// (elapsedMs only holds the current lap when the dial clears on each lap.)
+let completedLapsMs = 0;
+function renderSessionTotal(currentElapsed = elapsedMs) {
+  if (!dialTotalValue) return;
+  const total = completedLapsMs + Math.max(0, currentElapsed - lapStartMs);
+  const str = msToHHMMSS(total);
+  if (dialTotalValue.textContent !== str) {
+    dialTotalValue.textContent = str;
+    // Keep the active session's sidebar total ticking too
+    const sideTotal = document.querySelector('.session-item.active .session-total');
+    if (sideTotal) sideTotal.textContent = str;
   }
 }
 
@@ -530,6 +543,8 @@ function getLedgerItems() {
 // ── Ledger rendering ──────────────────────────────────────────
 function renderLedger() {
   const lapItems = laps.filter(l => !l.type || l.type === 'lap');
+  completedLapsMs = lapItems.reduce((acc, l) => acc + (l.lapTimeMs || 0), 0);
+  renderSessionTotal();
   ledgerLapCount.textContent = `${lapItems.length} lap${lapItems.length !== 1 ? 's' : ''}`;
 
   if (laps.length === 0) {
@@ -1082,6 +1097,7 @@ function saveActiveSessionState() {
     session.lapCounter = lapCounter;
     session.laps = [...laps];
     session.remarks = remarksTextarea.value;
+    session.efficiency = readEfficiencyInput();
     session.gapElapsedMs = gapElapsedMs;
     session.currentGapLapNum = currentGapLapNum;
     
@@ -1106,6 +1122,7 @@ function loadActiveSession() {
     noSessionView.classList.remove('hidden');
     // Clear live variables
     elapsedMs = 0;
+    completedLapsMs = 0;
     if (dialTotalValue) dialTotalValue.textContent = '00:00:00';
     lapStartMs = 0;
     lapCounter = 1;
@@ -1191,6 +1208,7 @@ function loadActiveSession() {
 
     // Load remarks for this session
     remarksTextarea.value = session.remarks || '';
+    efficiencyInput.value = (typeof session.efficiency === 'number') ? session.efficiency : '';
 
     renderSessionsList();
   }
@@ -1324,6 +1342,25 @@ function toggleSidebar() {
   }
 }
 
+// Parse the efficiency input: '' -> null, otherwise clamped to 0..1
+function readEfficiencyInput() {
+  const raw = efficiencyInput.value.trim();
+  if (raw === '') return null;
+  const n = parseFloat(raw);
+  if (!isFinite(n)) return null;
+  return Math.min(1, Math.max(0, n));
+}
+
+// Total session time for any session: recorded laps + the lap in progress
+function getSessionTotalMs(s, live) {
+  const recorded = (s.laps || [])
+    .filter(l => !l.type || l.type === 'lap')
+    .reduce((acc, l) => acc + (l.lapTimeMs || 0), 0);
+  const el = live ? elapsedMs : (s.elapsedMs || 0);
+  const ls = live ? lapStartMs : (s.lapStartMs || 0);
+  return recorded + Math.max(0, el - ls);
+}
+
 // Render Sessions List in Sidebar
 function renderSessionsList() {
   if (!sessionsList) return;
@@ -1364,18 +1401,8 @@ function renderSessionsList() {
     const lapsCount = lapItems.length;
     const lapsText  = `${lapsCount} lap${lapsCount !== 1 ? 's' : ''}`;
     
-    let netDefStr = 'Net: —';
-    let netClass = '';
-    const hasMedians = s.lapMedianMs > 0 || s.laps.some(l => l.type === 'cycle_change');
-    if (hasMedians && lapsCount > 0) {
-      const netMs = lapItems.reduce((acc, l) => acc + (l.deficitMs || 0), 0);
-      const absNet = Math.abs(netMs);
-      const sign = netMs > 0 ? '-' : '+';
-      netDefStr = `Net: ${sign}${msToHHMMSS(absNet)}`;
-      if (netMs !== 0) {
-        netClass = netMs > 0 ? 'over' : 'under';
-      }
-    }
+    const totalStr = msToHHMMSS(getSessionTotalMs(s, isActive));
+    const effStr = (typeof s.efficiency === 'number') ? `${s.efficiency.toFixed(2)}x` : '—';
 
     const runningIndicator = isRunningSession ? '<span class="pulse-dot" title="Stopwatch Running"></span>' : '';
 
@@ -1401,7 +1428,9 @@ function renderSessionsList() {
           <div class="session-meta">
             <span>${lapsText}</span>
             <span>•</span>
-            <span class="session-deficit ${netClass}">${netDefStr}</span>
+            <span class="session-total">${totalStr}</span>
+            <span>•</span>
+            <span class="session-efficiency" title="Efficiency">${effStr}</span>
             ${runningIndicator}
           </div>
           <div class="session-time-range">${timeRangeStr}</div>
@@ -1781,8 +1810,10 @@ function saveRemarksNow() {
   const session = sessions.find(s => s.id === activeSessionId);
   if (session) {
     session.remarks = remarksTextarea.value;
+    session.efficiency = readEfficiencyInput();
     session.lastUpdated = Date.now();
     saveSessions();
+    renderSessionsList();
   }
 }
 
@@ -1807,6 +1838,11 @@ remarksModalOverlay.addEventListener('click', (e) => {
   if (e.target === remarksModalOverlay) closeRemarks();
 });
 remarksTextarea.addEventListener('input', onRemarksInput);
+efficiencyInput.addEventListener('input', onRemarksInput);
+efficiencyInput.addEventListener('blur', () => {
+  const v = readEfficiencyInput();
+  efficiencyInput.value = v === null ? '' : v;
+});
 
 // ── Auth UI helpers ───────────────────────────────────────────
 function setSyncStatus(status) {
