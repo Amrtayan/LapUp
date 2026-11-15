@@ -1,7 +1,7 @@
 // LapUp Service Worker
 // Network-first for app shell (auto-updates); stale-while-revalidate for Google Fonts.
 
-const CACHE_NAME = 'lapup-v5';
+const CACHE_NAME = 'lapup-v6';
 
 const APP_SHELL = [
   './index.html',

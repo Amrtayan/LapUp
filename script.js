@@ -6,6 +6,8 @@ import {
   onAuthChange,
   saveSessionsToCloud,
   loadSessionsFromCloud,
+  subscribeToCloud,
+  pickNewerSession,
   mergeSessions
 } from './firebase-config.js';
 
@@ -89,6 +91,7 @@ const gapDigits          = document.getElementById('gap-digits');
 const gapCs              = document.getElementById('gap-cs');
 const gapTotalRow        = document.getElementById('gap-total-row');
 const gapTotalValue      = document.getElementById('gap-total-value');
+const dialTotalValue     = document.getElementById('dial-total-value');
 
 // View toggle DOM refs
 const activeSessionView    = document.getElementById('active-session-view');
@@ -168,6 +171,10 @@ function renderClock(ms) {
   const { main, cs } = msToHHMMSScs(ms);
   clockDigits.textContent = main;
   clockCs.textContent     = cs;
+  // Keep ledger's total dial time in sync (only touch DOM when the second changes)
+  if (dialTotalValue && dialTotalValue.textContent !== main) {
+    dialTotalValue.textContent = main;
+  }
 }
 
 function getActiveMedians() {
@@ -878,7 +885,19 @@ function loadSessions() {
   }
 }
 
-// Merge in cloud sessions after sign-in
+// ── Cloud sync ─────────────────────────────────────────────────
+// cloudJson: id -> JSON of the last version known to be in the cloud.
+// A session is "dirty" when its current JSON differs from that.
+const cloudJson = new Map();
+const DELETED_KEY = 'laptrack_deleted_ids';
+let tombstones = new Set();
+try { tombstones = new Set(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]')); } catch (e) {}
+function persistTombstones() {
+  try { localStorage.setItem(DELETED_KEY, JSON.stringify([...tombstones])); } catch (e) {}
+}
+let unsubscribeCloud = null;
+
+// Merge in cloud sessions after sign-in, then go realtime
 async function syncFromCloud() {
   setSyncStatus('syncing');
   const result = await loadSessionsFromCloud();
@@ -887,7 +906,11 @@ async function syncFromCloud() {
     return;
   }
 
-  const merged = mergeSessions(sessions, result.sessions);
+  // Sessions deleted locally while offline must not come back
+  const cloudSessions = result.sessions.filter(s => !tombstones.has(s.id));
+  result.sessions.forEach(s => cloudJson.set(s.id, JSON.stringify(s)));
+
+  const merged = mergeSessions(sessions, cloudSessions);
   sessions = merged;
 
   // Prefer URL-specified session over cloud's active session
@@ -912,20 +935,128 @@ async function syncFromCloud() {
   if (activeSessionId) localStorage.setItem('laptrack_active_session_id', activeSessionId);
 
   loadActiveSession();
-  setSyncStatus('synced');
+
+  // Push anything the cloud is missing / has older, then listen for other devices
+  await pushToCloud();
+  if (unsubscribeCloud) unsubscribeCloud();
+  unsubscribeCloud = subscribeToCloud(applyCloudChanges);
 }
 
-// ── Cloud sync debounce ────────────────────────────────────────
-let _cloudSyncTimer = null;
-function scheduleSyncToCloud() {
-  if (!getCurrentUser()) return;
-  clearTimeout(_cloudSyncTimer);
-  _cloudSyncTimer = setTimeout(async () => {
-    setSyncStatus('syncing');
-    const ok = await saveSessionsToCloud(sessions, activeSessionId);
-    setSyncStatus(ok ? 'synced' : 'error');
-  }, 2000); // debounce: wait 2 s of inactivity before writing
+// Apply changes made on other devices (realtime)
+function applyCloudChanges(changes) {
+  let listChanged = false;
+  let activeChanged = false;
+  let localWon = false;
+
+  for (const c of changes) {
+    if (c.pending) continue; // echo of our own write
+
+    if (c.type === 'removed') {
+      cloudJson.delete(c.id);
+      if (tombstones.delete(c.id)) { persistTombstones(); continue; } // our own delete
+      if (sessions.some(s => s.id === c.id)) {
+        sessions = sessions.filter(s => s.id !== c.id);
+        listChanged = true;
+        if (c.id === activeSessionId) {
+          const sorted = [...sessions].sort((a, b) => b.lastUpdated - a.lastUpdated);
+          activeSessionId = sorted.length ? sorted[0].id : null;
+          activeChanged = true;
+        }
+      }
+      continue;
+    }
+
+    const remote = c.data;
+    cloudJson.set(c.id, JSON.stringify(remote));
+    if (tombstones.has(c.id)) continue;
+
+    const idx = sessions.findIndex(s => s.id === c.id);
+    if (idx === -1) {
+      sessions.push(remote);
+      listChanged = true;
+      continue;
+    }
+
+    const local = sessions[idx];
+    if (JSON.stringify(local) === JSON.stringify(remote)) continue;
+
+    const winner = pickNewerSession(local, remote);
+    if (winner === local) { localWon = true; continue; }
+
+    // Remote wins. Don't yank a session that is actively running on this
+    // device unless it has been ended elsewhere.
+    if (c.id === activeSessionId && (isRunning || isGapRunning) && remote.status !== 'ended') continue;
+
+    sessions[idx] = remote;
+    listChanged = true;
+    if (c.id === activeSessionId) {
+      if (isGapRunning) { isGapRunning = false; cancelAnimationFrame(gapRafId); gapLastTimestamp = null; }
+      activeChanged = true;
+    }
+  }
+
+  if (!listChanged) { if (localWon) scheduleSyncToCloud(); return; }
+
+  try { localStorage.setItem('laptrack_sessions', JSON.stringify(sessions)); } catch (e) {}
+  if (activeChanged) {
+    if (activeSessionId) localStorage.setItem('laptrack_active_session_id', activeSessionId);
+    loadActiveSession();
+  } else {
+    renderSessionsList();
+  }
+  if (localWon) scheduleSyncToCloud();
 }
+
+// ── Cloud sync (push) ──────────────────────────────────────────
+// Throttled: the first change schedules a push ~0.8 s later; further changes
+// inside that window ride along (so continuous autosaves can't starve it).
+let _cloudSyncTimer = null;
+let _pushing = false;
+let _pushAgain = false;
+function scheduleSyncToCloud(immediate = false) {
+  if (!getCurrentUser()) return;
+  if (immediate) {
+    clearTimeout(_cloudSyncTimer);
+    _cloudSyncTimer = null;
+    pushToCloud();
+    return;
+  }
+  if (_cloudSyncTimer) return;
+  _cloudSyncTimer = setTimeout(() => { _cloudSyncTimer = null; pushToCloud(); }, 800);
+}
+
+async function pushToCloud() {
+  if (!getCurrentUser()) return;
+  if (_pushing) { _pushAgain = true; return; }
+  _pushing = true;
+  try {
+    const dirty = [];
+    const sent = [];
+    for (const s of sessions) {
+      const json = JSON.stringify(s);
+      if (cloudJson.get(s.id) !== json) { dirty.push(s); sent.push([s.id, json]); }
+    }
+    const deleted = [...tombstones];
+
+    setSyncStatus('syncing');
+    const ok = await saveSessionsToCloud(dirty, deleted, activeSessionId);
+    if (ok) {
+      sent.forEach(([id, json]) => cloudJson.set(id, json));
+      deleted.forEach(id => tombstones.delete(id));
+      persistTombstones();
+    }
+    setSyncStatus(ok ? 'synced' : 'error');
+  } finally {
+    _pushing = false;
+    if (_pushAgain) { _pushAgain = false; scheduleSyncToCloud(); }
+  }
+}
+
+// Flush pending changes when the page is hidden/closed (mobile tab switch, etc.)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && _cloudSyncTimer) scheduleSyncToCloud(true);
+});
+window.addEventListener('pagehide', () => { if (_cloudSyncTimer) scheduleSyncToCloud(true); });
 
 // Save sessions to localStorage
 function saveSessions() {
@@ -944,7 +1075,7 @@ function saveSessions() {
 function saveActiveSessionState() {
   if (!activeSessionId) return;
   const session = sessions.find(s => s.id === activeSessionId);
-  if (session) {
+  if (session && session.status !== 'ended') {
     session.elapsedMs = elapsedMs;
     session.lapStartMs = lapStartMs;
     session.lapMedianMs = lapMedianMs;
@@ -975,6 +1106,7 @@ function loadActiveSession() {
     noSessionView.classList.remove('hidden');
     // Clear live variables
     elapsedMs = 0;
+    if (dialTotalValue) dialTotalValue.textContent = '00:00:00';
     lapStartMs = 0;
     lapCounter = 1;
     laps = [];
@@ -1139,6 +1271,8 @@ function deleteSession(id, event) {
   if (!session) return;
 
   sessions = sessions.filter(s => s.id !== id);
+  tombstones.add(id);
+  persistTombstones();
 
   if (activeSessionId === id) {
     if (sessions.length > 0) {
@@ -1595,6 +1729,7 @@ window.endSession = function(id, event) {
     saveSessions();
     renderSessionsList();
   }
+  scheduleSyncToCloud(true); // closing a session is important: don't wait
 };
 
 // ── Sidebar session gap-timer toggle ───────────────────────────
@@ -1718,6 +1853,8 @@ document.addEventListener('click', (e) => {
 // Sign out
 btnSignOut.addEventListener('click', async () => {
   authDropdown.classList.add('hidden');
+  if (unsubscribeCloud) { unsubscribeCloud(); unsubscribeCloud = null; }
+  cloudJson.clear();
   await signOutUser();
 });
 

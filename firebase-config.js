@@ -14,8 +14,8 @@ import {
   collection,
   doc,
   getDocs,
-  setDoc,
-  deleteDoc,
+  getDoc,
+  onSnapshot,
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
 
@@ -68,40 +68,25 @@ export function onAuthChange(callback) {
 
 // ── Firestore Sync Functions ─────────────────────────────────
 
-// Save all sessions to Firestore (full replace)
-export async function saveSessionsToCloud(sessions, activeSessionId) {
+// Write only the sessions that changed (dirtySessions) and delete removed ones
+// (deletedIds). No read-before-write and no full-collection rewrite.
+export async function saveSessionsToCloud(dirtySessions, deletedIds, activeSessionId) {
   const user = auth.currentUser;
-  if (!user) return;
+  if (!user) return false;
 
   try {
-    const sessionsRef = collection(db, 'users', user.uid, 'sessions');
-
-    // Get existing cloud session IDs to detect deletions
-    const snapshot = await getDocs(sessionsRef);
-    const cloudIds = new Set();
-    snapshot.forEach(doc => cloudIds.add(doc.id));
-
-    // Batch write all current sessions
     const batch = writeBatch(db);
 
-    for (const session of sessions) {
-      const sessionDoc = doc(db, 'users', user.uid, 'sessions', session.id);
-      batch.set(sessionDoc, session);
-      cloudIds.delete(session.id); // still exists locally
+    for (const session of dirtySessions) {
+      batch.set(doc(db, 'users', user.uid, 'sessions', session.id), session);
     }
-
-    // Delete sessions that exist in cloud but not locally (user deleted them)
-    for (const orphanId of cloudIds) {
-      const orphanDoc = doc(db, 'users', user.uid, 'sessions', orphanId);
-      batch.delete(orphanDoc);
+    for (const id of deletedIds) {
+      batch.delete(doc(db, 'users', user.uid, 'sessions', id));
     }
-
-    // Save active session ID as metadata
-    const metaDoc = doc(db, 'users', user.uid, 'meta', 'preferences');
-    batch.set(metaDoc, { activeSessionId, lastSynced: Date.now() });
+    batch.set(doc(db, 'users', user.uid, 'meta', 'preferences'),
+      { activeSessionId: activeSessionId || null, lastSynced: Date.now() });
 
     await batch.commit();
-    console.log('[LapUp] Synced to cloud ✓');
     return true;
   } catch (error) {
     console.error('[LapUp] Cloud save error:', error);
@@ -109,57 +94,66 @@ export async function saveSessionsToCloud(sessions, activeSessionId) {
   }
 }
 
-// Load all sessions from Firestore
+// One-off load of all sessions + preferences (fetched in parallel)
 export async function loadSessionsFromCloud() {
   const user = auth.currentUser;
   if (!user) return null;
 
   try {
-    const sessionsRef = collection(db, 'users', user.uid, 'sessions');
-    const snapshot = await getDocs(sessionsRef);
+    const [snapshot, metaSnap] = await Promise.all([
+      getDocs(collection(db, 'users', user.uid, 'sessions')),
+      getDoc(doc(db, 'users', user.uid, 'meta', 'preferences'))
+    ]);
 
     const cloudSessions = [];
-    snapshot.forEach(docSnap => {
-      cloudSessions.push(docSnap.data());
-    });
-
-    // Load active session preference
-    const metaDoc = doc(db, 'users', user.uid, 'meta', 'preferences');
-    const { getDoc } = await import('https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js');
-    const metaSnap = await getDoc(metaDoc);
+    snapshot.forEach(docSnap => cloudSessions.push(docSnap.data()));
     const meta = metaSnap.exists() ? metaSnap.data() : {};
 
-    return {
-      sessions: cloudSessions,
-      activeSessionId: meta.activeSessionId || null
-    };
+    return { sessions: cloudSessions, activeSessionId: meta.activeSessionId || null };
   } catch (error) {
     console.error('[LapUp] Cloud load error:', error);
     return null;
   }
 }
 
-// Merge cloud sessions with local sessions (cloud wins for conflicts, local-only sessions are kept)
+// Realtime listener: calls onChange(changes) whenever another device writes.
+// Each change: { type: 'added'|'modified'|'removed', id, data, pending }
+// Returns an unsubscribe function.
+export function subscribeToCloud(onChange) {
+  const user = auth.currentUser;
+  if (!user) return () => {};
+  return onSnapshot(
+    collection(db, 'users', user.uid, 'sessions'),
+    { includeMetadataChanges: false },
+    (snap) => {
+      const changes = snap.docChanges().map(c => ({
+        type: c.type,
+        id: c.doc.id,
+        data: c.doc.data(),
+        pending: c.doc.metadata.hasPendingWrites
+      }));
+      if (changes.length) onChange(changes);
+    },
+    (err) => console.error('[LapUp] Realtime listener error:', err)
+  );
+}
+
+// Pick the winning version of one session.
+// An ended session is final: it always beats a non-ended copy, so a stale
+// device can never "re-open" a session that was closed elsewhere.
+export function pickNewerSession(local, cloud) {
+  const localEnded = local.status === 'ended';
+  const cloudEnded = cloud.status === 'ended';
+  if (localEnded !== cloudEnded) return localEnded ? local : cloud;
+  return (local.lastUpdated || 0) > (cloud.lastUpdated || 0) ? local : cloud;
+}
+
+// Merge cloud sessions with local sessions
 export function mergeSessions(localSessions, cloudSessions) {
   const merged = new Map();
-
-  // Add all cloud sessions (they take priority)
-  for (const s of cloudSessions) {
-    merged.set(s.id, s);
-  }
-
-  // Add local-only sessions (ones not in cloud)
+  for (const s of cloudSessions) merged.set(s.id, s);
   for (const s of localSessions) {
-    if (!merged.has(s.id)) {
-      merged.set(s.id, s);
-    } else {
-      // Both exist — keep the one with the latest lastUpdated
-      const cloud = merged.get(s.id);
-      if (s.lastUpdated > (cloud.lastUpdated || 0)) {
-        merged.set(s.id, s);
-      }
-    }
+    merged.set(s.id, merged.has(s.id) ? pickNewerSession(s, merged.get(s.id)) : s);
   }
-
   return Array.from(merged.values());
 }
