@@ -115,7 +115,8 @@
         <div class="${classes.join(' ')}">
           <div class="cal-date">${day}</div>
           ${hasTime ? `<div class="cal-total">${msToHHMMSS(st.totalMs)}</div>` : ''}
-          ${hasEff ? `<div class="cal-eff">${(st.effSum / st.effCount).toFixed(2)}x</div>` : ''}
+          ${hasEff ? `<div class="cal-eff">${(st.effSum / st.effCount).toFixed(2)}x</div>`
+            : (hasTime ? `<div class="cal-eff cal-eff-empty">-</div>` : '')}
         </div>`);
     }
 

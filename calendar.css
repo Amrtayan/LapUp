@@ -136,6 +136,7 @@
   font-variant-numeric: tabular-nums;
   color: #fff;
 }
+.cal-eff-empty { color: var(--text-muted); font-weight: 600; }
 .cal-cell.below-baseline { background: rgba(255,77,109,0.07); }
 .cal-cell.below-baseline .cal-total { color: var(--red); }
 .cal-eff {
