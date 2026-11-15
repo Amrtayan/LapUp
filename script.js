@@ -178,6 +178,9 @@ function renderClock(ms) {
 // Total session time = all recorded lap times + the lap currently in progress.
 // (elapsedMs only holds the current lap when the dial clears on each lap.)
 let completedLapsMs = 0;
+function sumManualMs(items) {
+  return items.filter(l => l.type === 'manual').reduce((acc, l) => acc + (l.durationMs || 0), 0);
+}
 function renderSessionTotal(currentElapsed = elapsedMs) {
   if (!dialTotalValue) return;
   const total = completedLapsMs + Math.max(0, currentElapsed - lapStartMs);
@@ -514,6 +517,12 @@ function getLedgerItems() {
         medians: activeMedians,
         timestamp: item.timestamp || i
       });
+    } else if (item && item.type === 'manual') {
+      items.push({
+        type: 'manual',
+        durationMs: item.durationMs || 0,
+        originalIndex: i
+      });
     } else if (item && item.type === 'gap') {
       items.push({
         type: 'gap',
@@ -543,7 +552,7 @@ function getLedgerItems() {
 // ── Ledger rendering ──────────────────────────────────────────
 function renderLedger() {
   const lapItems = laps.filter(l => !l.type || l.type === 'lap');
-  completedLapsMs = lapItems.reduce((acc, l) => acc + (l.lapTimeMs || 0), 0);
+  completedLapsMs = lapItems.reduce((acc, l) => acc + (l.lapTimeMs || 0), 0) + sumManualMs(laps);
   renderSessionTotal();
   ledgerLapCount.textContent = `${lapItems.length} lap${lapItems.length !== 1 ? 's' : ''}`;
 
@@ -571,6 +580,20 @@ function renderLedger() {
                 <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
               </svg>
               <span>Lap Cycle: ${mediansStr}</span>
+            </div>
+          </td>
+        </tr>`;
+    }
+
+    if (item.type === 'manual') {
+      return `
+        <tr class="ledger-manual-row">
+          <td colspan="3">
+            <div class="manual-content">
+              <span class="manual-plus">+</span>
+              <span class="manual-time">${msToHHMMSS(item.durationMs)}</span>
+              <span class="manual-badge">added manually</span>
+              <button class="btn-remove-manual" onclick="removeManualTime(${item.originalIndex})" title="Remove this entry" aria-label="Remove manual time entry">×</button>
             </div>
           </td>
         </tr>`;
@@ -1169,6 +1192,7 @@ function loadActiveSession() {
     gapLastTimestamp = null;
 
     const isEnded = session.status === 'ended';
+    btnAddTime.style.display = isEnded ? 'none' : '';
 
     // Update buttons state
     if (isEnded) {
@@ -1355,7 +1379,7 @@ function readEfficiencyInput() {
 function getSessionTotalMs(s, live) {
   const recorded = (s.laps || [])
     .filter(l => !l.type || l.type === 'lap')
-    .reduce((acc, l) => acc + (l.lapTimeMs || 0), 0);
+    .reduce((acc, l) => acc + (l.lapTimeMs || 0), 0) + sumManualMs(s.laps || []);
   const el = live ? elapsedMs : (s.elapsedMs || 0);
   const ls = live ? lapStartMs : (s.lapStartMs || 0);
   return recorded + Math.max(0, el - ls);
@@ -1792,6 +1816,56 @@ function toggleSessionGapTimer(event) {
   renderSessionsList();
 }
 window.toggleSessionGapTimer = toggleSessionGapTimer;
+
+// ── Manual time entry ──────────────────────────────────────────
+const btnAddTime       = document.getElementById('btn-add-time');
+const addTimeOverlay   = document.getElementById('add-time-overlay');
+const addTimeHH        = document.getElementById('add-time-hh');
+const addTimeMM        = document.getElementById('add-time-mm');
+const addTimeSS        = document.getElementById('add-time-ss');
+
+function openAddTime() {
+  const session = sessions.find(s => s.id === activeSessionId);
+  if (!session || session.status === 'ended') return;
+  addTimeHH.value = 0;
+  addTimeMM.value = 0;
+  addTimeSS.value = 0;
+  addTimeOverlay.classList.add('active');
+  addTimeMM.focus();
+  addTimeMM.select();
+}
+
+function closeAddTime() {
+  addTimeOverlay.classList.remove('active');
+}
+
+function saveManualTime() {
+  const clamp = (el, max) => Math.min(max, Math.max(0, parseInt(el.value, 10) || 0));
+  const durationMs = ((clamp(addTimeHH, 99) * 60 + clamp(addTimeMM, 59)) * 60 + clamp(addTimeSS, 59)) * 1000;
+  if (durationMs <= 0) { closeAddTime(); return; }
+
+  laps.push({ type: 'manual', durationMs, timestamp: Date.now() });
+  closeAddTime();
+  renderLedger();
+  saveActiveSessionState();
+}
+
+window.removeManualTime = function(index) {
+  const entry = laps[index];
+  if (!entry || entry.type !== 'manual') return;
+  laps.splice(index, 1);
+  // Indexes after the removed one shift down: drop the mobile "show" states
+  Object.keys(mobileShowStates).forEach(k => delete mobileShowStates[k]);
+  renderLedger();
+  saveActiveSessionState();
+};
+
+btnAddTime.addEventListener('click', openAddTime);
+document.getElementById('btn-add-time-cancel').addEventListener('click', closeAddTime);
+document.getElementById('btn-add-time-save').addEventListener('click', saveManualTime);
+addTimeOverlay.addEventListener('click', (e) => { if (e.target === addTimeOverlay) closeAddTime(); });
+[addTimeHH, addTimeMM, addTimeSS].forEach(el =>
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveManualTime(); }));
 
 // ── Remarks Modal ────────────────────────────────────────────
 function openRemarks() {

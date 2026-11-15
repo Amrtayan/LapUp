@@ -66,7 +66,8 @@
   function sessionTotalMs(s) {
     const recorded = (s.laps || [])
       .filter(l => !l.type || l.type === 'lap')
-      .reduce((acc, l) => acc + (l.lapTimeMs || 0), 0);
+      .reduce((acc, l) => acc + (l.lapTimeMs || 0), 0)
+      + (s.laps || []).filter(l => l.type === 'manual').reduce((acc, l) => acc + (l.durationMs || 0), 0);
     return recorded + Math.max(0, (s.elapsedMs || 0) - (s.lapStartMs || 0));
   }
 

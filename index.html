@@ -233,7 +233,10 @@
           </div>
           <div class="net-subtext" id="net-subtext">Record your first lap to begin tracking</div>
           <div class="gap-total-row" id="dial-total-row">
-            <span class="gap-total-label">Total Session Time</span>
+            <span class="total-label-group">
+              <span class="gap-total-label">Total Session Time</span>
+              <button type="button" class="btn-add-time" id="btn-add-time" title="Manually add time to this session">+ Add time</button>
+            </span>
             <span class="gap-total-value" id="dial-total-value">00:00:00</span>
           </div>
           <div class="gap-total-row hidden" id="gap-total-row">
@@ -244,6 +247,34 @@
       </section>
 
     </main>
+  </div>
+
+  <!-- ── ADD TIME MODAL ── -->
+  <div class="modal-overlay" id="add-time-overlay" role="dialog" aria-modal="true" aria-labelledby="add-time-title">
+    <div class="modal-card">
+      <h3 id="add-time-title">Add Time to Session</h3>
+      <p class="modal-desc">Add time that wasn't tracked on the dial. It counts toward Total Session Time and is logged in the ledger (not as a lap).</p>
+      <div class="time-inputs">
+        <div class="time-input-group">
+          <input type="number" id="add-time-hh" min="0" max="99" value="0" placeholder="00" aria-label="Hours"/>
+          <label for="add-time-hh">HH</label>
+        </div>
+        <span class="time-sep">:</span>
+        <div class="time-input-group">
+          <input type="number" id="add-time-mm" min="0" max="59" value="0" placeholder="00" aria-label="Minutes"/>
+          <label for="add-time-mm">MM</label>
+        </div>
+        <span class="time-sep">:</span>
+        <div class="time-input-group">
+          <input type="number" id="add-time-ss" min="0" max="59" value="0" placeholder="00" aria-label="Seconds"/>
+          <label for="add-time-ss">SS</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-add-time-cancel" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="btn-add-time-save" class="btn btn-primary" type="button">Add Time</button>
+      </div>
+    </div>
   </div>
 
   <!-- ── LAP CYCLE MODAL ── -->
