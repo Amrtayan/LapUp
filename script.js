@@ -1762,12 +1762,9 @@ window.endSession = function(id, event) {
   const session = sessions.find(s => s.id === id);
   if (!session || session.status === 'ended') return;
   
-  session.status = 'ended';
-  session.endTime = Date.now();
-  session.lastUpdated = Date.now();
-  
   if (id === activeSessionId) {
-    // Finalize any running gaps or dial
+    // Finalize any running gaps or dial, and capture the live state while the
+    // session is still active (saveActiveSessionState skips ended sessions)
     if (isRunning) {
       startStop();
     }
@@ -1775,11 +1772,18 @@ window.endSession = function(id, event) {
       finalizeGap(false);
       hideGapUI();
     }
-    saveActiveSessionState(); // one final save
+    saveActiveSessionState();
+  }
+
+  session.status = 'ended';
+  session.endTime = Date.now();
+  session.lastUpdated = Date.now();
+  saveSessions(); // persist the ended status to localStorage
+
+  if (id === activeSessionId) {
     activeSessionId = null;
     loadActiveSession();
   } else {
-    saveSessions();
     renderSessionsList();
   }
   scheduleSyncToCloud(true); // closing a session is important: don't wait
