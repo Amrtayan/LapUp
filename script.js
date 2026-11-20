@@ -21,6 +21,7 @@ let lastTimestamp = null;     // last rAF timestamp
 let laps        = [];         // { type: 'lap'/'cycle_change'/'gap', ... }
 let lapCounter  = 1;          // next lap number
 let lastSavedElapsedMs = 0;   // last elapsedMs at which we autosaved
+let _lastOverlayBroadcastMs = 0; // for overlay resync throttle
 let clearStopwatchWithLap = true; // permanently true
 let tempMedians = [];         // temporary medians list for Set Lap Cycle modal
 let mobileShowStates = {};    // tracks independent timeouts for each lap's eye icon
@@ -365,6 +366,12 @@ function tick(timestamp) {
     lastSavedElapsedMs = elapsedMs;
   }
 
+  // Resync overlay every ~2 seconds
+  if (elapsedMs - _lastOverlayBroadcastMs >= 2000) {
+    _lastOverlayBroadcastMs = elapsedMs;
+    broadcastOverlayState();
+  }
+
   rafId = requestAnimationFrame(tick);
 }
 
@@ -403,6 +410,7 @@ function startStop() {
     saveActiveSessionState();
   }
   renderSessionsList();
+  broadcastOverlayState();
 }
 
 function recordLap() {
@@ -431,6 +439,7 @@ function recordLap() {
     elapsedMs = 0;
     lapStartMs = 0;
     lastSavedElapsedMs = 0;
+    _lastOverlayBroadcastMs = 0;
   } else {
     lapStartMs = elapsedMs;
   }
@@ -452,6 +461,7 @@ function recordLap() {
 
   saveActiveSessionState();
   updateMedianDisplay(); // advance displayed target to next median in cycle
+  broadcastOverlayState({ flashGreen: false });
 }
 
 function clearLap() {
@@ -467,6 +477,7 @@ function clearLap() {
   elapsedMs        = 0;
   lapStartMs       = 0;
   lastSavedElapsedMs = 0;
+  _lastOverlayBroadcastMs = 0;
 
   // Also pause if running (avoids a ghost lap accumulating while clock shows 0)
   if (isRunning) {
@@ -491,6 +502,7 @@ function clearLap() {
 
   renderLedger();
   saveActiveSessionState();
+  broadcastOverlayState();
 }
 
 // ── Ledger rendering ──────────────────────────────────────────
@@ -789,6 +801,7 @@ function applyMedian() {
   
   updateMedianDisplay();
   saveActiveSessionState();
+  broadcastOverlayState();
 }
 
 // ── Event Listeners ───────────────────────────────────────────
@@ -799,6 +812,10 @@ btnSetMedian.addEventListener('click', openModal);
 btnModalSet.addEventListener('click', applyMedian);
 btnModalCancel.addEventListener('click', closeModal);
 modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+
+// Overlay button
+const btnOpenOverlay = document.getElementById('btn-open-overlay');
+if (btnOpenOverlay) btnOpenOverlay.addEventListener('click', openOverlay);
 
 // Sidebar Event Listeners
 btnToggleSidebar.addEventListener('click', toggleSidebar);
@@ -1236,6 +1253,7 @@ function loadActiveSession() {
 
     renderSessionsList();
   }
+  broadcastOverlayState();
 }
 
 // Create a new study session
@@ -1980,6 +1998,140 @@ onAuthChange(async (user) => {
     await syncFromCloud();
   }
 });
+
+// ── Overlay BroadcastChannel ──────────────────────────────────
+const _overlayChannel = new BroadcastChannel('lapup-overlay');
+let   _overlayWin     = null;
+
+function _buildOverlayState(opts = {}) {
+  const activeMedians = getActiveMedians();
+  let medianText = 'No cycle set';
+  if (activeMedians.length > 0) {
+    let lapsInCycle = 0;
+    for (let i = laps.length - 1; i >= 0; i--) {
+      if (laps[i].type === 'cycle_change') break;
+      if (laps[i].type === 'lap') lapsInCycle++;
+    }
+    const idx = lapsInCycle % activeMedians.length;
+    medianText = `${msToHHMMSS(activeMedians[idx])} (${idx+1}/${activeMedians.length})`;
+  }
+
+  return {
+    isRunning,
+    elapsedMs,
+    lapStartMs,
+    currentTargetMs: getCurrentLapTarget(),
+    isGapRunning,
+    gapElapsedMs,
+    lapLabel:      lapSegmentLabel ? lapSegmentLabel.textContent : `LAP ${lapCounter}`,
+    medianText,
+    startLabel:    btnStart ? btnStart.textContent : 'Start',
+    startDisabled: btnStart ? btnStart.disabled    : false,
+    lapDisabled:   btnLap   ? btnLap.disabled      : true,
+    resetDisabled: btnReset ? btnReset.disabled    : true,
+    hasActiveSession: !!activeSessionId,
+    flashGreen: opts.flashGreen || false,
+  };
+}
+
+function broadcastOverlayState(opts = {}) {
+  _overlayChannel.postMessage({ type: 'STATE_UPDATE', state: _buildOverlayState(opts) });
+}
+
+// Heartbeat so overlay can detect main window closure
+setInterval(() => {
+  _overlayChannel.postMessage({ type: 'HEARTBEAT' });
+}, 1500);
+
+// Listen for requests from overlay
+_overlayChannel.addEventListener('message', (e) => {
+  if (e.data.type === 'OVERLAY_READY') {
+    // Overlay just opened — send full state immediately
+    broadcastOverlayState();
+    return;
+  }
+  if (e.data.type === 'OVERLAY_CMD') {
+    switch (e.data.cmd) {
+      case 'START_STOP':     startStop();                       break;
+      case 'LAP':            recordLap();                       break;
+      case 'RESET':          clearLap();                        break;
+      case 'OPEN_REMARKS':   window.focus(); openRemarks();     break;
+      case 'OPEN_SET_CYCLE': window.focus(); openModal();       break;
+
+      case 'GET_REMARKS_DATA': {
+        // Send current remarks & efficiency back to overlay
+        const session = sessions.find(s => s.id === activeSessionId);
+        _overlayChannel.postMessage({
+          type:       'REMARKS_DATA',
+          remarks:    session ? (session.remarks || '') : '',
+          efficiency: session ? session.efficiency : null
+        });
+        break;
+      }
+
+      case 'SAVE_REMARKS': {
+        // Overlay saved remarks — persist them
+        if (!activeSessionId) break;
+        const session = sessions.find(s => s.id === activeSessionId);
+        if (session) {
+          session.remarks    = e.data.remarks    ?? session.remarks;
+          session.efficiency = e.data.efficiency ?? session.efficiency;
+          session.lastUpdated = Date.now();
+          // Sync textarea in main window too
+          if (remarksTextarea) remarksTextarea.value = session.remarks;
+          if (efficiencyInput && e.data.efficiency != null) efficiencyInput.value = session.efficiency;
+          saveSessions();
+          renderSessionsList();
+        }
+        break;
+      }
+
+      case 'GET_CYCLE_DATA': {
+        // Send current active medians back to overlay
+        _overlayChannel.postMessage({
+          type:    'CYCLE_DATA',
+          medians: getActiveMedians()
+        });
+        break;
+      }
+
+      case 'APPLY_CYCLE': {
+        // Overlay applied a new cycle — same logic as applyMedian() but with overlay's medians
+        const newMedians = e.data.medians;
+        if (!newMedians || newMedians.length === 0) break;
+        laps.push({ type: 'cycle_change', medians: newMedians, timestamp: Date.now() });
+        lapCounter = 1;
+        lapStartMs = elapsedMs;
+        updateDial();
+        renderLedger();
+        lapSegmentLabel.textContent = `LAP ${lapCounter}`;
+        updateMedianDisplay();
+        saveActiveSessionState();
+        broadcastOverlayState();
+        break;
+      }
+    }
+  }
+});
+
+function openOverlay() {
+  const w = 340, h = 460;
+  const left = window.screen.width  - w - 20;
+  const top  = Math.round((window.screen.height - h) / 4);
+  const features = [
+    `width=${w}`, `height=${h}`,
+    `left=${left}`, `top=${top}`,
+    'resizable=yes', 'scrollbars=no',
+    'toolbar=no', 'menubar=no', 'location=no', 'status=no',
+    'popup=yes'
+  ].join(',');
+
+  if (_overlayWin && !_overlayWin.closed) {
+    _overlayWin.focus();
+    return;
+  }
+  _overlayWin = window.open('./overlay.html', 'lapup-overlay', features);
+}
 
 // ── Init ──────────────────────────────────────────────────────
 loadSessions();

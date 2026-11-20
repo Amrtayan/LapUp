@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LapUp — Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="overlay.css" />
+</head>
+<body>
+
+  <!-- Drag handle bar -->
+  <div class="drag-handle" id="drag-handle">
+    <div class="drag-dots"></div>
+    <span class="overlay-title">LapUp</span>
+    <button class="btn-close-overlay" id="btn-close-overlay" title="Close Overlay">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- No session state -->
+  <div id="no-session-view" class="no-session-view hidden">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+    <p>No active session</p>
+    <p class="hint">Create a session in the main window</p>
+  </div>
+
+  <!-- Active session view -->
+  <div id="active-session-view" class="active-session-view">
+
+    <!-- Top row: Remarks + Set Lap Cycle -->
+    <div class="top-actions">
+      <button class="btn-overlay-action" id="btn-overlay-remarks" title="Session Remarks">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+        </svg>
+        Remarks
+      </button>
+      <button class="btn-overlay-action" id="btn-overlay-set-cycle" title="Set Lap Cycle">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+        Set Lap Cycle
+      </button>
+    </div>
+
+    <!-- Dial -->
+    <div class="dial-wrapper">
+      <svg class="dial-svg" id="dial-svg" viewBox="0 0 320 320" aria-hidden="true">
+        <circle cx="160" cy="160" r="148" class="dial-deco-ring"/>
+        <g id="dial-ticks"></g>
+        <circle cx="160" cy="160" r="132" class="dial-track"/>
+        <circle cx="160" cy="160" r="132" class="dial-progress" id="dial-progress"/>
+        <circle cx="160" cy="160" r="118" class="dial-inner-ring"/>
+      </svg>
+      <div class="clock-overlay">
+        <div class="lap-segment-label" id="lap-segment-label">LAP 1</div>
+        <div class="clock-display" id="clock-display">
+          <span class="clock-digits" id="clock-digits">00:00:00</span>
+          <span class="clock-cs" id="clock-cs">.00</span>
+        </div>
+        <div class="median-display" id="median-display">
+          <span class="median-icon">◎</span>
+          <span id="median-value-display">No cycle set</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gap Timer -->
+    <div id="gap-timer-container" class="gap-timer-container">
+      <div class="gap-timer-label">PAUSED — GAP</div>
+      <div class="gap-timer-display">
+        <span id="gap-digits">00:00:00</span>
+        <span id="gap-cs">.00</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="btn-reset" class="btn btn-secondary" disabled>Clear Lap</button>
+      <button id="btn-start" class="btn btn-primary">Start</button>
+      <button id="btn-lap" class="btn btn-accent" disabled>Lap</button>
+    </div>
+
+  </div>
+
+  <!-- Disconnected banner -->
+  <div id="disconnected-banner" class="disconnected-banner hidden">
+    Main window closed — read-only
+  </div>
+
+  <!-- ── REMARKS MODAL (lives in overlay) ── -->
+  <div class="ov-modal-overlay hidden" id="ov-remarks-overlay">
+    <div class="ov-modal-card">
+      <div class="ov-modal-header">
+        <div class="ov-modal-title-group">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+          <span>Session Remarks</span>
+        </div>
+        <button class="ov-modal-close" id="ov-remarks-close" title="Close">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="ov-efficiency-row">
+        <label class="ov-label">Efficiency</label>
+        <input type="number" id="ov-efficiency" class="ov-efficiency-input" min="0" max="1" step="0.01" placeholder="0–1" />
+      </div>
+      <textarea id="ov-remarks-textarea" class="ov-textarea" placeholder="Write session notes here…" rows="5"></textarea>
+      <div class="ov-save-indicator hidden" id="ov-save-indicator">Saved</div>
+    </div>
+  </div>
+
+  <!-- ── SET LAP CYCLE MODAL (lives in overlay) ── -->
+  <div class="ov-modal-overlay hidden" id="ov-cycle-overlay">
+    <div class="ov-modal-card">
+      <div class="ov-modal-header">
+        <div class="ov-modal-title-group">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+            <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+          </svg>
+          <span>Set Lap Cycle</span>
+        </div>
+        <button class="ov-modal-close" id="ov-cycle-close" title="Close">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <p class="ov-modal-desc">Build a repeating cycle of target lap durations.</p>
+
+      <div class="ov-label" style="margin-bottom:6px">Active Cycle</div>
+      <div id="ov-cycle-list" class="ov-cycle-list">
+        <div class="ov-cycle-empty">No medians added yet</div>
+      </div>
+
+      <div class="ov-label" style="margin:10px 0 6px">Add Next Target</div>
+      <div class="ov-time-inputs">
+        <div class="ov-time-group">
+          <input type="number" id="ov-hh" min="0" max="99" value="0" placeholder="00" />
+          <label>HH</label>
+        </div>
+        <span class="ov-time-sep">:</span>
+        <div class="ov-time-group">
+          <input type="number" id="ov-mm" min="0" max="59" value="0" placeholder="00" />
+          <label>MM</label>
+        </div>
+        <span class="ov-time-sep">:</span>
+        <div class="ov-time-group">
+          <input type="number" id="ov-ss" min="0" max="59" value="0" placeholder="00" />
+          <label>SS</label>
+        </div>
+        <button class="btn btn-secondary ov-add-btn" id="ov-add-median">+ Add</button>
+      </div>
+
+      <div class="ov-modal-actions">
+        <button class="btn btn-secondary" id="ov-cycle-cancel">Cancel</button>
+        <button class="btn btn-primary" id="ov-cycle-set">Set Cycle</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="overlay.js"></script>
+</body>
+</html>

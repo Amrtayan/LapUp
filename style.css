@@ -291,6 +291,32 @@ html, body {
   transform: translateY(-1px);
 }
 
+/* ── Open Overlay Button ─────────────────────────────────── */
+.btn-open-overlay {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1px solid rgba(108,99,255,0.35);
+  border-radius: 50px;
+  background: rgba(108,99,255,0.08);
+  color: #a09cf7;
+  font-family: var(--font);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.btn-open-overlay:hover {
+  background: rgba(108,99,255,0.18);
+  box-shadow: 0 4px 16px rgba(108,99,255,0.22);
+  transform: translateY(-1px);
+}
+@media (max-width: 700px) {
+  .btn-overlay-text { display: none; }
+  .btn-open-overlay { padding: 8px 10px; }
+}
+
 /* ── Main Layout ────────────────────────────────────────────── */
 .main-content {
   display: flex;
