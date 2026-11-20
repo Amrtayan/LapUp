@@ -222,7 +222,7 @@ bc.postMessage({ type: 'OVERLAY_READY' });
 // ── Heartbeat: detect main window closed ──────────────────────
 let lastHeartbeat = Date.now();
 setInterval(() => {
-  if (Date.now() - lastHeartbeat > 4000) {
+  if (Date.now() - lastHeartbeat > 15000) {
     disconnectedBanner.classList.remove('hidden');
     if (isRunning) { lastKnownMs += performance.now() - (localStartTime || performance.now()); localStartTime = null; isRunning = false; }
   }

@@ -2039,9 +2039,20 @@ function broadcastOverlayState(opts = {}) {
 }
 
 // Heartbeat so overlay can detect main window closure
-setInterval(() => {
-  _overlayChannel.postMessage({ type: 'HEARTBEAT' });
-}, 1500);
+// Driven from a Web Worker: timers on a backgrounded tab get throttled
+// (down to ~1/min after 5 min hidden), which made the overlay think the
+// main window had closed. Worker timers aren't throttled that way.
+(function startOverlayHeartbeat() {
+  try {
+    const src = `
+      const bc = new BroadcastChannel('lapup-overlay');
+      setInterval(() => bc.postMessage({ type: 'HEARTBEAT' }), 1500);`;
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    new Worker(url);
+  } catch (err) {
+    setInterval(() => _overlayChannel.postMessage({ type: 'HEARTBEAT' }), 1500);
+  }
+})();
 
 // Listen for requests from overlay
 _overlayChannel.addEventListener('message', (e) => {
